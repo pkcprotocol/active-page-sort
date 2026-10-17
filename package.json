@@ -1,0 +1,73 @@
+{
+  "name": "@pkcprotocol/active-page-sort",
+  "version": "0.0.0",
+  "description": "Bump-order (active) page sort for pkc-js communities where replies carrying a configured keyword, such as sage, do not bump the thread",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "AGENTS.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --project unit",
+    "test:unit": "vitest run --project unit",
+    "test:e2e": "npm run build && vitest run --project e2e",
+    "test:watch": "vitest --project unit",
+    "clean": "rm -rf dist",
+    "prepare": "husky",
+    "prepublishOnly": "npm run build",
+    "release": "HUSKY=0 release-it --config config/.release-it.json"
+  },
+  "keywords": [
+    "bitsocial",
+    "pkc",
+    "page-sort",
+    "active",
+    "bump",
+    "sage",
+    "imageboard"
+  ],
+  "author": "Rinse",
+  "license": "GPL-3.0-or-later",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "20.4.3",
+    "@commitlint/config-conventional": "20.4.3",
+    "@pkcprotocol/pkc-js": "0.0.109",
+    "@release-it/conventional-changelog": "10.0.5",
+    "@types/node": "25.3.5",
+    "husky": "9.1.7",
+    "kubo": "0.43.1",
+    "release-it": "19.2.4",
+    "typescript": "5.9.3",
+    "vitest": "4.0.18"
+  },
+  "peerDependencies": {
+    "@pkcprotocol/pkc-js": ">=0.0.108"
+  },
+  "peerDependenciesMeta": {
+    "@pkcprotocol/pkc-js": {
+      "optional": true
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pkcprotocol/active-page-sort.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
