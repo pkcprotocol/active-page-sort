@@ -8,7 +8,8 @@ A board's catalog shows threads in bump order: the thread with the newest reply 
 
 - A thread's **bump time** is the newest of the post's own timestamp and the timestamps of its replies that are **not** no-bump replies.
 - A **no-bump reply** is a reply whose content has a whole line equal to one of the configured keywords. The match is exact and case-sensitive: a content of `sage`, or a multi-line content with a line that is exactly `sage`, does not bump. `sage is overused` in prose, `Sage`, `#sage` and ` sage` all bump.
-- Replies **under** a no-bump reply still count. Someone answering a saged reply bumps the thread as usual.
+- Replies **under** a no-bump reply still count, at any depth. Someone answering a saged reply bumps the thread as usual.
+- A reply the sort's exclusion options drop (by default: removed, deleted, disapproved or pending approval) never counts, and neither does anything under it. Deleting a saged reply also takes the answers under it out of the bump.
 - A saged thread **sinks, it is never hidden**. The sort ranks, it does not filter.
 - With the keyword option unset the sort is plain bump order, identical to pkc-js's built-in `active`.
 
@@ -18,7 +19,7 @@ The word `sage` appears nowhere in this package. The board supplies its vocabula
 
 ## How the sorting works
 
-pkc-js regenerates a community's post pages on every publish cycle. For each configured sort it calls the sort file's `score` once per post, higher scores first, equal scores in insertion order. Because this sort declares `requireReplies`, pkc-js hands `score` every descendant of the post as one flat list (reduced by the sort's exclusion options, so removed or deleted replies are already gone), and the score is:
+pkc-js regenerates a community's post pages on every publish cycle. For each configured sort it calls the sort file's `score` once per post, higher scores first, equal scores in insertion order. Because this sort declares `requireReplies`, pkc-js hands `score` every descendant of the post as one flat list (reduced by the sort's exclusion options, so removed or deleted replies are already gone, together with their subtrees), and the score is:
 
 ```
 max(post.timestamp, ...replies.filter(not no-bump).map(reply => reply.timestamp))
@@ -34,7 +35,7 @@ The built-in `active` reads one number off each post's CommentUpdate (`lastReply
 
 ## Requirements
 
-- pkc-js `>=0.0.108` (configurable page sorts, `settings.pages`)
+- pkc-js `>=0.0.110` (configurable page sorts, `settings.pages`, and the page sort types exported from the root)
 - Node.js `>=22` on the machine running the community
 - ESM-only environment
 
@@ -192,7 +193,7 @@ const saged = isNoBumpReplyForOptions(reply.content, community.pageSorts?.posts?
 
 ### 4. Re-sort a page locally (optional)
 
-pkc-js exports no sorter: the package's `score` is the whole contract. A UI that wants to re-order threads between community publishes (a user's own reply just landed, say) applies `score` itself. This sort declares `requireReplies`, so it needs each thread's replies: walk a flat reply sort (`newFlat` / `oldFlat`) when the post carries one, otherwise the nested sort's pages recursively, and hand each post its descendants by `parentCid`. The worked example of the walk and the re-sort is `test/node-and-browser/pages/page-sorts-client-test-util.ts` in pkc-js; this package's own copy of the re-sort is `test/unit/resort-like-a-ui.ts`. A re-sorted page is still one slice of one sort: re-sorting it gives that slice in another order, not the whole board.
+pkc-js exports no sorter: the package's `score` is the whole contract. A UI that wants to re-order threads between community publishes (a user's own reply just landed, say) applies `score` itself. This sort declares `requireReplies`, so it needs each thread's replies: walk a flat reply sort (`newFlat` / `oldFlat`) when the post carries one, otherwise the nested sort's pages recursively, at every depth. Then drop the replies the published `exclude*` options exclude, and only then hand each post its descendants by `parentCid`, so a reply under a dropped reply is never reached. Reply pages are generated with the replies scope's exclusions, which keep deleted and removed replies; a walked tree passed through unfiltered counts a deleted reply the community did not, and the re-sort disagrees with the published order. pkc-js does not export its filter: `applyReplyExclusions` in `test/unit/resort-like-a-ui.ts` is a copy to start from. The worked example of the walk and the re-sort is `test/node-and-browser/pages/page-sorts-client-test-util.ts` in pkc-js; this package's own copy of the re-sort is `test/unit/resort-like-a-ui.ts`. A re-sorted page is still one slice of one sort: re-sorting it gives that slice in another order, not the whole board.
 
 ```ts
 import activePageSort from "@pkcprotocol/active-page-sort";
@@ -216,8 +217,8 @@ Treat `community.pageSorts[].name` as data: look it up in your own registry, nev
 | `SORT_NAME`, `DESCRIPTION`, `optionInputs`, `validatePageSortSettings` | The file's declared surface, for config UIs and tests |
 | `NO_BUMP_KEYWORDS_OPTION` | `"noBumpKeywords"`, the option key. Renaming it is a new contract |
 | `splitKeywords`, `isNoBumpContent`, `bumpTimestamp`, `isNoBumpReplyForOptions` | The matching rules, import-free, for browsers |
-| `PageSortFile`, `PageSortFileFactory`, `PageSortFileFactoryInput`, `PageSortReplyEntry` | Re-exported pkc-js types |
-| `PageSortFileFactoryArgs`, `PageSortSettingsEntry`, `PageSortScoreArgs` | Derived from the pkc-js types until pkc-js names them |
+| `PageSortFile`, `PageSortFileInput`, `PageSortFileFactory`, `PageSortFileFactoryInput`, `PageSortFileFactoryArgs`, `PageSortScoreArgs`, `PageSortReplyEntry`, `PageSortScope`, `CommunityPageSortSetting` | Re-exported pkc-js types (root exports since pkc-js 0.0.110) |
+| `PageSortSettingsEntry` | Alias of `CommunityPageSortSetting`, the `settings.pages` entry the factory receives |
 
 ## Development
 
@@ -232,9 +233,9 @@ npm run test:e2e    # builds, starts a throwaway kubo daemon, runs a real commun
 |---|---|
 | `src/active-page-sort.ts` | The factory: `sortName`, `scope`, `requireReplies`, `optionInputs`, `score`, `validatePageSortSettings` |
 | `src/no-bump.ts` | Keyword splitting, the line match, the bump-time fold. Imports nothing |
-| `src/types.ts` | Re-exports and derivations of the pkc-js page sort types |
+| `src/types.ts` | Re-exports of the pkc-js page sort types |
 | `test/unit/` | The contract: match semantics, scorer, validation, and a client re-sort reproducing the community order |
-| `test/e2e/` | A kubo daemon from the `kubo` npm package on ports 15301/18380/24301 (override with `KUBO_E2E_*_PORT`), a pkc-js community configured by `path`, a `sage` reply that does not bump and a normal reply that does, read back by a second PKC over IPNS |
+| `test/e2e/` | A kubo daemon from the `kubo` npm package on ports 15301/18380/24301 (override with `KUBO_E2E_*_PORT`), a pkc-js community configured by `path`, `sage` and normal replies at depths 1 to 3, author deletions that cut a subtree, read back by a second PKC over IPNS and re-sorted from the walked reply tree |
 
 The e2e writes everything under `.tmp/` in the repository and removes it afterwards.
 
