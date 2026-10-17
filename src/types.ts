@@ -32,3 +32,18 @@ export type PageSortSettingsEntry = CommunityPageSortSetting;
 export interface NoBumpReplyLike {
   comment: { timestamp: number; content?: string | undefined };
 }
+
+/**
+ * The subset of a reply `applyReplyExclusions` reads. A `PageSortReplyEntry` and a page entry's `raw` are both
+ * supersets; the optional fields accept an explicit `undefined`, as page entries carry them.
+ */
+export interface ExcludableReplyLike {
+  comment: { parentCid?: string | undefined };
+  commentUpdate: {
+    cid: string;
+    removed?: boolean | undefined;
+    approved?: boolean | undefined;
+    pendingApproval?: boolean | undefined;
+    edit?: { deleted?: boolean | undefined } | undefined;
+  };
+}

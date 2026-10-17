@@ -222,7 +222,7 @@ describe("@pkcprotocol/active-page-sort on a real community", () => {
   let newerSageSigner: Signer;
 
   // What a UI does with the remote page: walk every reply page, re-sort with the published options, from a
-  // reversed input so the re-sort does the work.
+  // reversed input so the re-sort does the work. The walk goes in unfiltered: score applies the exclusions.
   function expectClientOrderToMatch(): void {
     const posts = activePosts(remote);
     const published = remote.pageSorts?.posts?.["active"];
@@ -303,7 +303,7 @@ describe("@pkcprotocol/active-page-sort on a real community", () => {
     expect(order(posts)).toEqual([newer.cid, older.cid]);
   });
 
-  it("a client re-sort still lands on the community's order once it drops the deleted reply it walked", async () => {
+  it("a client re-sort of the raw walk still lands on the community's order: the walk keeps the deleted reply, score drops it", () => {
     const walked = activePosts(remote).flatMap(walkReplies);
     expect(walked.find((entry) => entry.commentUpdate.cid === olderDeep.cid)?.commentUpdate.edit?.deleted, "the reply page keeps the deleted reply").toBe(true);
     expectClientOrderToMatch();

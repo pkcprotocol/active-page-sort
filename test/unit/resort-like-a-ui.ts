@@ -2,24 +2,8 @@ import type { PageSortFileFactory, PageSortReplyEntry, PageSortScoreArgs, PageSo
 
 // The pkc-js "Client side" guidance (docs/protocol/page-sorts.md) as runnable code: pkc-js exports no
 // sorter, a UI applies the package's `score` itself. Used by the tests to check that a page re-sorted this
-// way lands in the order the community publishes.
-
-// The reserved exclusions the community applies to the `replies` it scores over (pkc-js
-// `applyPageSortExclusions`, not exported). Reply pages are generated with the replies scope's exclusions,
-// which keep deleted and removed replies, so a walked tree holds replies the post sort never scored. A
-// published `"true"` drops the reply, and the descendant walk below then never reaches anything under it,
-// the same cut the community makes. `excludeCommentsWithDifferentCommunityAddress` needs the community's
-// address and is left out: a tree walked from the community's own pages holds only its own replies.
-export function applyReplyExclusions(replies: PageSortReplyEntry[], options: Record<string, string>): PageSortReplyEntry[] {
-  const on = (option: string) => options[option] === "true";
-  return replies.filter(({ commentUpdate }) => {
-    if (on("excludeRemovedComments") && commentUpdate.removed === true) return false;
-    if (on("excludeDeletedComments") && commentUpdate.edit?.deleted === true) return false;
-    if (on("excludeCommentWithApprovedFalse") && commentUpdate.approved === false) return false;
-    if (on("excludeCommentPendingApproval") && commentUpdate.pendingApproval === true) return false;
-    return true;
-  });
-}
+// way lands in the order the community publishes. It passes the walked replies as they are, exclusions
+// included: filtering them is the package's job (`applyReplyExclusions` inside `score`), not the UI's.
 
 export interface PageEntry {
   comment: PageSortScoreArgs["comment"];
@@ -42,7 +26,7 @@ export function resortLikeAUi({
   const file = factory({ pageSortSettings });
   const options = pageSortSettings.options ?? {};
   const childrenOf = new Map<string, PageSortReplyEntry[]>();
-  for (const reply of applyReplyExclusions(replies, options)) {
+  for (const reply of replies) {
     const parentCid = reply.comment.parentCid;
     if (!parentCid) continue;
     const siblings = childrenOf.get(parentCid) ?? [];

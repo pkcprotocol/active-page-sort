@@ -95,7 +95,7 @@ describe("score", () => {
     expect(
       file.score({
         comment: buildComment({ timestamp: 1_000 }),
-        commentUpdate: buildCommentUpdate({ lastReplyTimestamp: 1_900, replyCount: 1 }),
+        commentUpdate: buildCommentUpdate({ cid: POST_CID, lastReplyTimestamp: 1_900, replyCount: 1 }),
         options: SAGE.options ?? {},
         baseTimestamp: BASE_TIMESTAMP,
         replies: [buildReply({ timestamp: 1_900, content: "sage" })]
@@ -109,6 +109,13 @@ describe("score", () => {
   });
   it("is the built-in active order when the option is unset", () => {
     expect(score([buildReply({ timestamp: 1_900, content: "sage" })], buildSettings())).toBe(1_900);
+  });
+  it("does not count a deleted reply, or the normal reply under it, when the options exclude deleted comments", () => {
+    const options = { [NO_BUMP_KEYWORDS_OPTION]: "sage", excludeDeletedComments: "true" };
+    const deleted = buildReply({ timestamp: 1_500, content: "bump", commentUpdate: { edit: { deleted: true } } });
+    const under = buildReply({ timestamp: 1_600, content: "bump", parentCid: deleted.commentUpdate.cid, depth: 2 });
+    expect(score([deleted, under], buildSettings(options))).toBe(1_000);
+    expect(score([deleted, under])).toBe(1_600);
   });
   it("never declines: a saged thread sinks, it does not disappear", () => {
     expect(score([buildReply({ timestamp: 1_900, content: "sage" })])).not.toBeNull();
@@ -218,9 +225,10 @@ describe("a client re-sorting threads with nested replies walks every level", ()
   });
 });
 
-describe("a client re-sorting from walked reply pages drops what the post sort excluded", () => {
+describe("a client re-sorting a raw reply-page walk: score drops what the post sort excluded", () => {
   // Reply pages keep deleted and removed replies (the replies scope's exclusions), the post sort does not,
-  // and the community never reaches a reply under an excluded one. The published publicOptions say which.
+  // and the community never reaches a reply under an excluded one. The published publicOptions say which,
+  // and score applies them, so the UI passes the walk unfiltered.
   const POST_EXCLUSIONS = {
     [NO_BUMP_KEYWORDS_OPTION]: "sage",
     pinnedFirst: "true",

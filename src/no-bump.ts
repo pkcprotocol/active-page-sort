@@ -1,4 +1,4 @@
-import type { NoBumpReplyLike } from "./types.js";
+import type { ExcludableReplyLike, NoBumpReplyLike } from "./types.js";
 
 // The matching rules, with no imports, so a browser UI can apply the same test the community applies to
 // render a "sage" marker or to validate the reply form. Keep this file identical in behaviour to the
@@ -49,4 +49,54 @@ export const bumpTimestamp = ({
     if (reply.comment.timestamp > bump) bump = reply.comment.timestamp;
   }
   return bump;
+};
+
+/**
+ * The reserved exclusion options this package re-applies, and what each drops. `excludeCommentsWithDifferentCommunityAddress`
+ * is not here: it compares against the community's address, which a sort file is never given (pkc-js#401).
+ */
+export const EXCLUSION_OPTIONS = {
+  excludeRemovedComments: (update: ExcludableReplyLike["commentUpdate"]) => update.removed === true,
+  excludeDeletedComments: (update: ExcludableReplyLike["commentUpdate"]) => update.edit?.deleted === true,
+  excludeCommentWithApprovedFalse: (update: ExcludableReplyLike["commentUpdate"]) => update.approved === false,
+  excludeCommentPendingApproval: (update: ExcludableReplyLike["commentUpdate"]) => update.pendingApproval === true
+} as const;
+
+/**
+ * The replies a thread's bump counts: those reachable from the post through replies the `exclude*` options keep.
+ * A dropped reply takes everything under it along, and so does a reply whose parent is not in the list. This is
+ * pkc-js's own filter and subtree cut for the replies it hands `score`, so on the community it changes nothing.
+ * On a client it turns a walk of the reply pages, which keep deleted and removed replies, into the set the
+ * community scored. Flags parse like pkc-js parses them: trimmed, case-insensitive `"true"` is on, anything else
+ * off. Pass the published `publicOptions`; without the flags nothing is dropped. Linear in the thread's replies.
+ */
+export const applyReplyExclusions = <T extends ExcludableReplyLike>({
+  postCid,
+  replies,
+  options
+}: {
+  postCid: string;
+  replies: readonly T[];
+  options: Readonly<Record<string, string>>;
+}): T[] => {
+  const active = Object.entries(EXCLUSION_OPTIONS)
+    .filter(([option]) => options[option]?.trim().toLowerCase() === "true")
+    .map(([, drops]) => drops);
+  const childrenOf = new Map<string, T[]>();
+  for (const reply of replies) {
+    const parentCid = reply.comment.parentCid;
+    if (!parentCid || active.some((drops) => drops(reply.commentUpdate))) continue;
+    const siblings = childrenOf.get(parentCid);
+    if (siblings) siblings.push(reply);
+    else childrenOf.set(parentCid, [reply]);
+  }
+  const counted: T[] = [];
+  const stack = [postCid];
+  for (let cid = stack.pop(); cid !== undefined; cid = stack.pop()) {
+    for (const child of childrenOf.get(cid) ?? []) {
+      counted.push(child);
+      stack.push(child.commentUpdate.cid);
+    }
+  }
+  return counted;
 };

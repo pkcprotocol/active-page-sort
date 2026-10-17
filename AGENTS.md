@@ -27,9 +27,18 @@ Conventions specific to this package:
   this package. A rename is a new contract, never an edit. The literal is pinned in `test/unit/no-bump.test.ts`.
 - The match is a whole line equal to the keyword, exact and case-sensitive. `src/no-bump.ts` imports
   nothing and must keep matching what the README describes, because UIs copy or bundle it for the browser.
-- `score` is sync, reads only `comment.timestamp` and the replies' `timestamp` / `content`, and never
-  returns `null`: a saged thread sinks, it is not filtered. There is no database access and no network; a
-  need for either is a later iteration of the pkc-js contract, not a reason to reach around it.
+- `score` is sync and never returns `null`: a saged thread sinks, it is not filtered. It reads
+  `comment.timestamp`, `commentUpdate.cid`, the reserved `exclude*` options, and per reply `parentCid`,
+  `timestamp`, `content`, and the CommentUpdate's `cid`, `removed`, `approved`, `pendingApproval` and
+  `edit.deleted`. There is no database access and no network; a need for either is a later iteration of
+  the pkc-js contract, not a reason to reach around it.
+- `applyReplyExclusions` (in `src/no-bump.ts`) re-applies pkc-js's reply exclusions inside `score`. On the
+  community it is a no-op, the list is already filtered; on a client it turns a raw reply-page walk into
+  the set the community scored. It must keep matching pkc-js's `applyPageSortExclusions` and its subtree
+  cut (`createDescendantsLookup`, `src/pages/page-sort-scoring.ts`), flag parsing included (trimmed,
+  case-insensitive `true`). A new reserved exclusion in pkc-js means a release here.
+  `excludeCommentsWithDifferentCommunityAddress` is left out on purpose: `score` has no community address
+  (pkc-js#401).
 - The scorer ignores `commentUpdate.lastReplyTimestamp` on purpose. That aggregate counts saged replies.
 - `validatePageSortSettings` is sync and rejects only what can never work (empty list, line break, size
   bounds). An unset option is valid and means plain bump order.

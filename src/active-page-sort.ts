@@ -1,5 +1,5 @@
 import type { PageSortFile, PageSortFileFactory, PageSortFileFactoryArgs, PageSortSettingsEntry } from "./types.js";
-import { NO_BUMP_KEYWORDS_OPTION, bumpTimestamp, isNoBumpContent, splitKeywords } from "./no-bump.js";
+import { NO_BUMP_KEYWORDS_OPTION, applyReplyExclusions, bumpTimestamp, isNoBumpContent, splitKeywords } from "./no-bump.js";
 
 /** The wire key: this sort publishes under `community.posts.pages.active` / `pageCids.active`, like the built-in it replaces. */
 export const SORT_NAME = "active";
@@ -53,10 +53,15 @@ export const activePageSort: PageSortFileFactory = ({ pageSortSettings }: PageSo
     requireReplies: true,
     optionInputs,
     defaultOptions: {},
-    // MAX(timestamp) over the post and its non-no-bump descendants. pkc-js hands `replies` as one flat list of
-    // every descendant that survived this sort's exclusion options; a client passes what it walked.
-    score: ({ comment, replies }) =>
-      bumpTimestamp({ postTimestamp: comment.timestamp, replies: replies ?? [], keywords }),
+    // MAX(timestamp) over the post and its counted, non-no-bump descendants. pkc-js hands `replies` as one flat
+    // list of every descendant that survived this sort's exclusion options, so the re-filter is a no-op there; a
+    // client passes the reply pages it walked, which keep deleted and removed replies, and the re-filter drops them.
+    score: ({ comment, commentUpdate, options, replies }) =>
+      bumpTimestamp({
+        postTimestamp: comment.timestamp,
+        replies: applyReplyExclusions({ postCid: commentUpdate.cid, replies: replies ?? [], options }),
+        keywords
+      }),
     validatePageSortSettings
   };
 };
