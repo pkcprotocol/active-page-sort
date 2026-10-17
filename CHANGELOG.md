@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.0.3](https://github.com/pkcprotocol/active-page-sort/compare/v0.0.2...v0.0.3) (2026-10-17)
+
 ## [0.0.2](https://github.com/pkcprotocol/active-page-sort/compare/v0.0.1...v0.0.2) (2026-10-17)
 
 ### Build System
