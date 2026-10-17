@@ -51,13 +51,15 @@ export const buildReply = ({
   content,
   parentCid = POST_CID,
   depth = 1,
-  cid = nextCid()
+  cid = nextCid(),
+  commentUpdate = {}
 }: {
   timestamp: number;
   content?: string;
   parentCid?: string;
   depth?: number;
   cid?: string;
+  commentUpdate?: Partial<PageSortReplyEntry["commentUpdate"]>;
 }): PageSortReplyEntry => ({
   comment: {
     parentCid,
@@ -73,7 +75,8 @@ export const buildReply = ({
     upvoteCount: 0,
     downvoteCount: 0,
     replyCount: 0,
-    updatedAt: timestamp + 1
+    updatedAt: timestamp + 1,
+    ...commentUpdate
   }
 });
 
