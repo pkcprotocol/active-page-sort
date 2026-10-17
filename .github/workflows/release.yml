@@ -25,6 +25,9 @@ jobs:
           cache: 'npm'
           registry-url: 'https://registry.npmjs.org'
 
+      # The runner's Node 22 bundles npm 10, which rejects a lockfile written by npm 11 (nested optional
+      # entries such as utf-8-validate get pruned). Pin the npm the lockfile is maintained with.
+      - run: npm i -g npm@11.13.0
       - run: npm ci
       - run: npm run build
 
