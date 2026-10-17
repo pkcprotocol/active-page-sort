@@ -112,11 +112,16 @@ bitsocial community edit yourboard.bso \
 
 ### Options
 
-| Option | Values | Default | Meaning |
-|---|---|---|---|
-| `noBumpKeywords` | Comma-separated list, e.g. `sage` or `sage,nobump` | unset | A reply whose content has a whole line equal to one of these does not bump its thread. Unset means plain bump order |
+Page sort options are strings, like challenge options. Unlike challenge options they are **public by default**: everything set in `options` is published in `community.pageSorts.posts.active.publicOptions` unless its name is listed in the entry's `privateOptions`.
 
-The reserved pkc-js options apply like on any sort and are published alongside: `maxAge` (window, e.g. `"7d"`), `pinnedFirst` (`"true"` by default), and the `exclude*` moderation flags with the `posts` scope defaults. See the pkc-js page sorts doc for their meaning.
+| Option | Required | Published in `publicOptions` | Default | Description |
+|---|---|---|---|---|
+| `noBumpKeywords` | no | yes, unless listed in `privateOptions` | unset (plain bump order) | Comma-separated keywords, e.g. `sage` or `sage,nobump`. A reply whose content has a whole line equal to one of these does not bump its thread. Exact and case-sensitive |
+| `maxAge` | no | always (reserved) | none | pkc-js reserved: a sliding window such as `"36h"`, `"7d"`, `"2w"`, `"1M"`, `"1y"`. Threads older than the window drop out of the pages (pinned threads bypass it) |
+| `pinnedFirst` | no | always (reserved) | `"true"` | pkc-js reserved: pinned threads first and outside the window. `"false"` treats them as ordinary threads |
+| `excludeRemovedComments`, `excludeDeletedComments`, `excludeCommentPendingApproval`, `excludeCommentWithApprovedFalse`, `excludeCommentsWithDifferentCommunityAddress` | no | always (reserved) | `"true"` for the `posts` scope | pkc-js reserved moderation filters on the comment set the sort starts from. A reply excluded here is also absent from the `replies` the sort scores over |
+
+Keep `noBumpKeywords` public unless you have a reason not to: a UI reads it to know the board supports sage, to put the keyword on the wire the way the sort reads it, and to mark saged replies. With the option private the order still applies but UIs cannot do any of that. The reserved options cannot be made private (`ERR_PAGE_SORT_RESERVED_OPTION_CANNOT_BE_PRIVATE`): a client re-sorting a page must know how its comment set was filtered. Their full semantics are in the pkc-js page sorts doc, "Reserved options".
 
 ### Validation
 
