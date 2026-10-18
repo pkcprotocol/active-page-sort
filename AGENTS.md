@@ -25,11 +25,12 @@ Conventions specific to this package:
 - `NO_BUMP_KEYWORDS_OPTION` (`noBumpKeywords`) is the wire contract. UIs read it off
   `community.pageSorts.posts.active.publicOptions` to render a sage marker, and most of them never install
   this package. A rename is a new contract, never an edit. The literal is pinned in `test/unit/no-bump.test.ts`.
+  `BUMP_LIMIT_OPTION` (`bumpLimit`) is the same kind of contract and is pinned next to it.
 - The match is a whole line equal to the keyword, exact and case-sensitive. `src/no-bump.ts` imports
   nothing and must keep matching what the README describes, because UIs copy or bundle it for the browser.
 - `score` is sync and never returns `null`: a saged thread sinks, it is not filtered. It reads
   `comment.timestamp`, the reserved `exclude*` options, and per reply `timestamp`, `content`, and the
-  CommentUpdate's `removed`, `approved`, `pendingApproval` and `edit.deleted`. There is no database access and
+  CommentUpdate's `cid`, `removed`, `approved`, `pendingApproval` and `edit.deleted`. There is no database access and
   no network; a need for either is a later iteration of the pkc-js contract, not a reason to reach around it.
 - `isCountedReply` / `bumpTimestamp` (in `src/no-bump.ts`) apply the `exclude*` options to each reply's own
   CommentUpdate, the tombstone rule of pkc-js's "Which replies count" (`docs/protocol/comment-lifecycle.md`):
@@ -38,9 +39,11 @@ Conventions specific to this package:
   (trimmed, case-insensitive `true`). With the `posts` defaults it must match the built-in `active`. A new
   reserved exclusion in pkc-js means a release here. `excludeCommentsWithDifferentCommunityAddress` is left
   out on purpose: pkc-js applies it, and `score` has no community address (pkc-js#401).
+- The bump limit counts the replies `isCountedReply` keeps, saged or not, ordered by `(timestamp, cid)` with the
+  CID compared as a plain string, so the community and a client re-sort agree on a tie at the boundary.
 - The scorer ignores `commentUpdate.lastReplyTimestamp` on purpose. That aggregate counts saged replies.
 - `validatePageSortSettings` is sync and rejects only what can never work (empty list, line break, size
-  bounds). An unset option is valid and means plain bump order.
+  bounds, a `bumpLimit` that is not a positive integer). An unset option is valid and means plain bump order.
 - Test fixtures are typed against pkc-js's own types through `test/unit/fixtures.ts`. Do not cast a
   fixture through `unknown`; a field that does not exist on the wire must fail to compile.
 - Never use the `any` type.

@@ -35,6 +35,7 @@ export type PageSortSettingsEntry = CommunityPageSortSetting;
 export interface NoBumpReplyLike {
   comment: { timestamp: number; content?: string | undefined };
   commentUpdate: {
+    cid: string;
     removed?: boolean | undefined;
     approved?: boolean | undefined;
     pendingApproval?: boolean | undefined;

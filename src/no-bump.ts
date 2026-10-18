@@ -7,6 +7,9 @@ import type { NoBumpReplyLike } from "./types.js";
 /** The option key under `settings.pages.posts[i].options`. Published as `community.pageSorts.posts.active.publicOptions.noBumpKeywords`. */
 export const NO_BUMP_KEYWORDS_OPTION = "noBumpKeywords";
 
+/** The option key for the bump limit. Published as `community.pageSorts.posts.active.publicOptions.bumpLimit`. */
+export const BUMP_LIMIT_OPTION = "bumpLimit";
+
 /** Comma-separated list to keywords: trimmed, empty entries dropped, duplicates kept out. */
 export const splitKeywords = (raw: string | undefined): string[] => {
   const keywords: string[] = [];
@@ -15,6 +18,17 @@ export const splitKeywords = (raw: string | undefined): string[] => {
     if (keyword && !keywords.includes(keyword)) keywords.push(keyword);
   }
   return keywords;
+};
+
+/**
+ * The bump limit an option value holds: a positive integer, surrounding whitespace trimmed. `undefined` for an
+ * unset option (no limit) and for anything else, which `validatePageSortSettings` rejects on the community.
+ */
+export const parseBumpLimit = (raw: string | undefined): number | undefined => {
+  const trimmed = raw?.trim();
+  if (!trimmed || !/^[1-9][0-9]*$/.test(trimmed)) return undefined;
+  const limit = Number(trimmed);
+  return Number.isSafeInteger(limit) ? limit : undefined;
 };
 
 /**
@@ -59,26 +73,36 @@ export const isCountedReply = (reply: NoBumpReplyLike, options: Readonly<Record<
 /**
  * A thread's bump time: the newest of the post's own timestamp and the timestamps of its counted replies (see
  * `isCountedReply`) that are not no-bump replies. Each reply is judged on its own: a normal reply under a saged
- * reply or a tombstone bumps. This is exactly what `score` returns, exposed so a UI can show "last bump" without
- * the page sort machinery. Pass the replies as pkc-js or a reply-page walk gives them, tombstones included, and
- * the published `publicOptions` as `options`.
+ * reply or a tombstone bumps. With a `bumpLimit`, only the first `bumpLimit` counted replies by `(timestamp, cid)`
+ * can bump, saged ones included in the count. This is exactly what `score` returns, exposed so a UI can show
+ * "last bump" without the page sort machinery. Pass the replies as pkc-js or a reply-page walk gives them,
+ * tombstones included, the published `publicOptions` as `options`, and `parseBumpLimit` of its `bumpLimit`.
  */
 export const bumpTimestamp = ({
   postTimestamp,
   replies,
   keywords,
-  options = {}
+  options = {},
+  bumpLimit
 }: {
   postTimestamp: number;
   replies: readonly NoBumpReplyLike[];
   keywords: readonly string[];
   options?: Readonly<Record<string, string>>;
+  bumpLimit?: number | undefined;
 }): number => {
   const exclusions = exclusionsOf(options);
+  let counted = replies.filter((reply) => !exclusions.some((drops) => drops(reply.commentUpdate)));
+  if (bumpLimit !== undefined && counted.length > bumpLimit) counted = [...counted].sort(byTimestampThenCid).slice(0, bumpLimit);
   let bump = postTimestamp;
-  for (const reply of replies) {
-    if (exclusions.some((drops) => drops(reply.commentUpdate)) || isNoBumpContent(reply.comment.content, keywords)) continue;
+  for (const reply of counted) {
+    if (isNoBumpContent(reply.comment.content, keywords)) continue;
     if (reply.comment.timestamp > bump) bump = reply.comment.timestamp;
   }
   return bump;
 };
+
+// The order "the first bumpLimit replies" is taken in. The CID breaks a tie in the same second, compared as a
+// plain string so the community and every client agree.
+const byTimestampThenCid = (a: NoBumpReplyLike, b: NoBumpReplyLike): number =>
+  a.comment.timestamp - b.comment.timestamp || (a.commentUpdate.cid < b.commentUpdate.cid ? -1 : a.commentUpdate.cid > b.commentUpdate.cid ? 1 : 0);

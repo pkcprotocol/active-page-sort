@@ -1,10 +1,11 @@
 import type { PageSortFile, PageSortFileFactory, PageSortFileFactoryArgs, PageSortSettingsEntry } from "./types.js";
-import { NO_BUMP_KEYWORDS_OPTION, bumpTimestamp, isNoBumpContent, splitKeywords } from "./no-bump.js";
+import { BUMP_LIMIT_OPTION, NO_BUMP_KEYWORDS_OPTION, bumpTimestamp, isNoBumpContent, parseBumpLimit, splitKeywords } from "./no-bump.js";
 
 /** The wire key: this sort publishes under `community.posts.pages.active` / `pageCids.active`, like the built-in it replaces. */
 export const SORT_NAME = "active";
 
-export const DESCRIPTION = "Bump order where a reply whose content has a line equal to a configured keyword does not bump its thread";
+export const DESCRIPTION =
+  "Bump order where a reply whose content has a line equal to a configured keyword does not bump its thread, with an optional bump limit";
 
 export const MAX_KEYWORDS = 64;
 export const MAX_KEYWORD_LENGTH = 128;
@@ -16,6 +17,13 @@ export const optionInputs: NonNullable<PageSortFile["optionInputs"]> = [
     description:
       "Comma-separated. A reply whose content has a whole line equal to one of these does not bump its thread (exact, case-sensitive). Leave unset for plain bump order.",
     placeholder: "sage"
+  },
+  {
+    option: BUMP_LIMIT_OPTION,
+    label: "Bump limit",
+    description:
+      "A positive integer. Only a thread's first this many replies, saged or not, can bump it; past the limit it sinks while staying open. Leave unset for no limit.",
+    placeholder: "300"
   }
 ];
 
@@ -26,6 +34,9 @@ const keywordsOf = (pageSortSettings: PageSortSettingsEntry): string[] => splitK
  * cannot match anything, which would silently turn the board into plain bump order.
  */
 export const validatePageSortSettings = ({ pageSortSettings }: { pageSortSettings: PageSortSettingsEntry }): void => {
+  const rawLimit = pageSortSettings.options?.[BUMP_LIMIT_OPTION];
+  if (rawLimit !== undefined && parseBumpLimit(rawLimit) === undefined)
+    throw new Error(`${BUMP_LIMIT_OPTION} must be a positive integer, got "${rawLimit.slice(0, 32)}": unset it for no limit`);
   const raw = pageSortSettings.options?.[NO_BUMP_KEYWORDS_OPTION];
   if (raw === undefined) return;
   const keywords = splitKeywords(raw);
@@ -46,6 +57,7 @@ export const validatePageSortSettings = ({ pageSortSettings }: { pageSortSetting
  */
 export const activePageSort: PageSortFileFactory = ({ pageSortSettings }: PageSortFileFactoryArgs): PageSortFile => {
   const keywords = keywordsOf(pageSortSettings);
+  const bumpLimit = parseBumpLimit(pageSortSettings.options?.[BUMP_LIMIT_OPTION]);
   return {
     sortName: SORT_NAME,
     description: DESCRIPTION,
@@ -56,7 +68,7 @@ export const activePageSort: PageSortFileFactory = ({ pageSortSettings }: PageSo
     // MAX(timestamp) over the post and its counted, non-no-bump descendants. pkc-js hands `replies` as one flat
     // list of every descendant, tombstones and pending replies included (pkc-js#407), and so does a client's walk
     // of the reply pages; bumpTimestamp skips what the exclude* options drop and keeps the replies under them.
-    score: ({ comment, options, replies }) => bumpTimestamp({ postTimestamp: comment.timestamp, replies: replies ?? [], keywords, options }),
+    score: ({ comment, options, replies }) => bumpTimestamp({ postTimestamp: comment.timestamp, replies: replies ?? [], keywords, options, bumpLimit }),
     validatePageSortSettings
   };
 };

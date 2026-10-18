@@ -8,7 +8,7 @@ import activePageSort, {
   optionInputs,
   validatePageSortSettings
 } from "../../src/active-page-sort.js";
-import { NO_BUMP_KEYWORDS_OPTION } from "../../src/no-bump.js";
+import { BUMP_LIMIT_OPTION, NO_BUMP_KEYWORDS_OPTION } from "../../src/no-bump.js";
 import { POST_CID, buildComment, buildCommentUpdate, buildReply, buildSettings, nextCid } from "./fixtures.js";
 import { resortLikeAUi, type PageEntry } from "./resort-like-a-ui.js";
 
@@ -27,10 +27,10 @@ describe("the file pkc-js receives", () => {
     expect(file.requireReplies).toBe(true);
     expect(file.flat).toBeUndefined();
   });
-  it("declares its option so pkc-js catches typos in settings.pages", () => {
+  it("declares its options so pkc-js catches typos in settings.pages", () => {
     expect(file.description).toBe(DESCRIPTION);
     expect(file.optionInputs).toBe(optionInputs);
-    expect(file.optionInputs?.map((input) => input.option)).toEqual([NO_BUMP_KEYWORDS_OPTION]);
+    expect(file.optionInputs?.map((input) => input.option)).toEqual([NO_BUMP_KEYWORDS_OPTION, BUMP_LIMIT_OPTION]);
     expect(file.defaultOptions).toEqual({});
     expect(file.validatePageSortSettings).toBe(validatePageSortSettings);
   });
@@ -118,6 +118,12 @@ describe("score", () => {
     expect(score([deleted], buildSettings(options))).toBe(1_000);
     expect(score([deleted, under])).toBe(1_600);
   });
+  it("applies the bump limit from the entry's options: a thread past it sinks", () => {
+    const replies = [buildReply({ timestamp: 1_100, content: "bump" }), buildReply({ timestamp: 1_200, content: "sage" }), buildReply({ timestamp: 1_900, content: "bump" })];
+    expect(score(replies, buildSettings({ [NO_BUMP_KEYWORDS_OPTION]: "sage", [BUMP_LIMIT_OPTION]: "2" }))).toBe(1_100);
+    expect(score(replies, buildSettings({ [NO_BUMP_KEYWORDS_OPTION]: "sage", [BUMP_LIMIT_OPTION]: "3" }))).toBe(1_900);
+    expect(score(replies, buildSettings({ [BUMP_LIMIT_OPTION]: "2" }))).toBe(1_200);
+  });
   it("never declines: a saged thread sinks, it does not disappear", () => {
     expect(score([buildReply({ timestamp: 1_900, content: "sage" })])).not.toBeNull();
   });
@@ -141,6 +147,11 @@ describe("validatePageSortSettings", () => {
     expect(() => validatePageSortSettings({ pageSortSettings: buildSettings({ [NO_BUMP_KEYWORDS_OPTION]: tooMany }) })).toThrow(/maximum/);
     const tooLong = "x".repeat(MAX_KEYWORD_LENGTH + 1);
     expect(() => validatePageSortSettings({ pageSortSettings: buildSettings({ [NO_BUMP_KEYWORDS_OPTION]: tooLong }) })).toThrow(/maximum/);
+  });
+  it("accepts a positive integer bump limit and rejects anything else", () => {
+    for (const ok of ["1", "300", " 300 "]) expect(() => validatePageSortSettings({ pageSortSettings: buildSettings({ [BUMP_LIMIT_OPTION]: ok }) })).not.toThrow();
+    for (const bad of ["", "0", "-1", "1.5", "300 replies"])
+      expect(() => validatePageSortSettings({ pageSortSettings: buildSettings({ [BUMP_LIMIT_OPTION]: bad }) }), bad).toThrow(/positive integer/);
   });
   it("lets the reserved options through untouched, pkc-js owns them", () => {
     const settings = buildSettings({ [NO_BUMP_KEYWORDS_OPTION]: "sage", maxAge: "7d", pinnedFirst: "false" });
@@ -273,5 +284,26 @@ describe("a client re-sorting a raw reply-page walk: tombstones arrive and score
     const removed = buildReply({ timestamp: 4_000, content: "bump", parentCid: g.commentUpdate.cid, commentUpdate: { removed: true } });
     const saged = buildReply({ timestamp: 5_000, content: "sage", parentCid: removed.commentUpdate.cid, depth: 2 });
     expect(rank([saged, removed])).toEqual(["H", "G"]);
+  });
+});
+
+describe("a client re-sorting with a bump limit lands on the community's order", () => {
+  const options = { [NO_BUMP_KEYWORDS_OPTION]: "sage", [BUMP_LIMIT_OPTION]: "2", excludeRemovedComments: "true", excludeDeletedComments: "true" };
+  const p: PageEntry = { comment: buildComment({ timestamp: 1_000, title: "P" }), commentUpdate: buildCommentUpdate({ cid: nextCid(), replyCount: 3 }) };
+  const q: PageEntry = { comment: buildComment({ timestamp: 2_000, title: "Q" }), commentUpdate: buildCommentUpdate({ cid: nextCid() }) };
+  const rank = (replies: ReturnType<typeof buildReply>[]) =>
+    resortLikeAUi({ comments: [q, p], factory: activePageSort, pageSortSettings: buildSettings(options), baseTimestamp: BASE_TIMESTAMP, replies }).map((entry) => entry.comment.title);
+
+  it("a reply past the limit does not bump P above the newer Q", () => {
+    const first = buildReply({ timestamp: 1_100, content: "one", parentCid: p.commentUpdate.cid });
+    const second = buildReply({ timestamp: 1_200, content: "sage", parentCid: p.commentUpdate.cid });
+    const third = buildReply({ timestamp: 3_000, content: "three", parentCid: p.commentUpdate.cid });
+    expect(rank([third, second, first])).toEqual(["Q", "P"]);
+  });
+  it("a deleted reply frees its place under the limit, so the next reply bumps", () => {
+    const first = buildReply({ timestamp: 1_100, content: "one", parentCid: p.commentUpdate.cid, commentUpdate: { edit: { deleted: true } } });
+    const second = buildReply({ timestamp: 1_200, content: "sage", parentCid: p.commentUpdate.cid });
+    const third = buildReply({ timestamp: 3_000, content: "three", parentCid: p.commentUpdate.cid });
+    expect(rank([third, second, first])).toEqual(["P", "Q"]);
   });
 });

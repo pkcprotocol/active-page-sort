@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { EXCLUSION_OPTIONS, NO_BUMP_KEYWORDS_OPTION, bumpTimestamp, isCountedReply, isNoBumpContent, splitKeywords } from "../../src/no-bump.js";
+import { BUMP_LIMIT_OPTION, EXCLUSION_OPTIONS, NO_BUMP_KEYWORDS_OPTION, bumpTimestamp, isCountedReply, parseBumpLimit, isNoBumpContent, splitKeywords } from "../../src/no-bump.js";
 import { buildReply } from "./fixtures.js";
 
 describe("the option key is the wire contract", () => {
   it("is literally noBumpKeywords, which UIs read off community.pageSorts.posts.active.publicOptions", () => {
     // Renaming this silently breaks every UI that renders a sage marker from the published options.
     expect(NO_BUMP_KEYWORDS_OPTION).toBe("noBumpKeywords");
+  });
+  it("is literally bumpLimit, which UIs compare to a thread's replyCount", () => {
+    expect(BUMP_LIMIT_OPTION).toBe("bumpLimit");
   });
 });
 
@@ -56,7 +59,7 @@ describe("isNoBumpContent", () => {
 describe("bumpTimestamp", () => {
   const keywords = ["sage"];
   const post = 1_000;
-  const reply = (timestamp: number, content?: string) => ({ comment: { timestamp, content }, commentUpdate: {} });
+  const reply = (timestamp: number, content?: string) => buildReply({ timestamp, ...(content === undefined ? {} : { content }) });
 
   it("is the post's own timestamp with no replies", () => {
     expect(bumpTimestamp({ postTimestamp: post, replies: [], keywords })).toBe(post);
@@ -143,5 +146,53 @@ describe("bumpTimestamp with tombstones", () => {
   it("counts a deleted reply when no options are passed: without the flags nothing is skipped", () => {
     const deleted = buildReply({ timestamp: 1_500, content: "bump", commentUpdate: { edit: { deleted: true } } });
     expect(bumpTimestamp({ postTimestamp: 1_000, replies: [deleted], keywords })).toBe(1_500);
+  });
+});
+
+describe("parseBumpLimit", () => {
+  it("reads a positive integer, trimmed", () => {
+    expect(parseBumpLimit("300")).toBe(300);
+    expect(parseBumpLimit(" 1 ")).toBe(1);
+  });
+  it("is undefined when unset or not a positive integer", () => {
+    for (const raw of [undefined, "", " ", "0", "-1", "1.5", "1e3", "0300", "300 replies", "99999999999999999999"]) expect(parseBumpLimit(raw), String(raw)).toBeUndefined();
+  });
+});
+
+describe("bumpTimestamp with a bump limit", () => {
+  const keywords = ["sage"];
+  const options = { excludeRemovedComments: "true", excludeDeletedComments: "true", excludeCommentWithApprovedFalse: "true", excludeCommentPendingApproval: "true" };
+  const bump = (replies: ReturnType<typeof buildReply>[], bumpLimit?: number) => bumpTimestamp({ postTimestamp: 1_000, replies, keywords, options, bumpLimit });
+
+  it("lets the first bumpLimit replies bump and not the ones after", () => {
+    const replies = [1_100, 1_200, 1_300, 1_400].map((timestamp) => buildReply({ timestamp, content: "bump" }));
+    expect(bump(replies, 3)).toBe(1_300);
+    expect(bump(replies, 4)).toBe(1_400);
+    expect(bump(replies)).toBe(1_400);
+  });
+  it("takes the first replies by timestamp, whatever order they arrive in", () => {
+    const replies = [1_400, 1_100, 1_300, 1_200].map((timestamp) => buildReply({ timestamp, content: "bump" }));
+    expect(bump(replies, 2)).toBe(1_200);
+  });
+  it("counts a saged reply toward the limit", () => {
+    const replies = [buildReply({ timestamp: 1_100, content: "bump" }), buildReply({ timestamp: 1_200, content: "sage" }), buildReply({ timestamp: 1_300, content: "bump" })];
+    expect(bump(replies, 2)).toBe(1_100);
+    expect(bump(replies, 3)).toBe(1_300);
+  });
+  it("does not count a tombstone toward the limit, but counts the replies under it", () => {
+    const tombstone = buildReply({ timestamp: 1_100, content: "bump", commentUpdate: { removed: true } });
+    const under = buildReply({ timestamp: 1_200, content: "answer", parentCid: tombstone.commentUpdate.cid, depth: 2 });
+    const later = buildReply({ timestamp: 1_300, content: "bump" });
+    expect(bump([tombstone, under, later], 2)).toBe(1_300);
+    expect(bump([tombstone, under, later], 1)).toBe(1_200);
+  });
+  it("breaks a timestamp tie at the limit by CID", () => {
+    const a = buildReply({ timestamp: 1_200, content: "bump", cid: "QmA" });
+    const b = buildReply({ timestamp: 1_200, content: "sage", cid: "QmB" });
+    // QmA sorts first, so with a limit of 2 the first reply and QmA are inside: the bump is QmA's 1_200
+    expect(bump([buildReply({ timestamp: 1_100, content: "bump" }), b, a], 2)).toBe(1_200);
+    const sagedFirst = buildReply({ timestamp: 1_200, content: "sage", cid: "QmA" });
+    const bumpSecond = buildReply({ timestamp: 1_200, content: "bump", cid: "QmB" });
+    expect(bump([buildReply({ timestamp: 1_100, content: "bump" }), bumpSecond, sagedFirst], 2)).toBe(1_100);
   });
 });

@@ -4,7 +4,7 @@ import * as path from "node:path";
 import { randomUUID } from "node:crypto";
 import PKC from "@pkcprotocol/pkc-js";
 import activePageSort from "../../src/active-page-sort.js";
-import { NO_BUMP_KEYWORDS_OPTION } from "../../src/no-bump.js";
+import { BUMP_LIMIT_OPTION, NO_BUMP_KEYWORDS_OPTION } from "../../src/no-bump.js";
 import type { PageSortReplyEntry } from "../../src/types.js";
 import { resortLikeAUi, type PageEntry } from "../unit/resort-like-a-ui.js";
 import { startKuboDaemon, type KuboDaemon } from "./kubo-daemon.js";
@@ -14,7 +14,8 @@ import { startKuboDaemon, type KuboDaemon } from "./kubo-daemon.js";
 // `community.pageSorts`. A `sage` reply to the older thread leaves it behind the newer one; a normal reply
 // then bumps it ahead. Then the same rules down the tree: a normal reply under a sage reply bumps, sage
 // replies at depth 2 and 3 do not, a normal reply at depth 3 does until its author deletes it, and deleting
-// a sage reply leaves a tombstone whose normal reply under it still bumps (pkc-js's "Which replies count"). The remote reader is a second PKC on the
+// a sage reply leaves a tombstone whose normal reply under it still bumps (pkc-js's "Which replies count").
+// Last, the bump limit: once the older thread has BUMP_LIMIT counted replies, its next reply does not bump it. The remote reader is a second PKC on the
 // same daemon, loading the record over IPNS like a UI would, and re-sorting the page itself from the reply
 // tree it walked. Run with `npm run test:e2e` (builds first: `path` points
 // at dist/index.js).
@@ -27,6 +28,9 @@ type Signer = Awaited<ReturnType<PKCInstance["createSigner"]>>;
 type PagePost = Community["posts"]["pages"][string] extends infer P ? (P extends { comments: (infer C)[] } ? C : never) : never;
 
 const PACKAGE_ENTRY = path.resolve(process.cwd(), "dist/index.js");
+// High enough that every earlier step stays inside it (the older thread peaks at 5 counted replies), so only the
+// last step crosses it.
+const BUMP_LIMIT = 5;
 const TMP_ROOT = path.resolve(process.cwd(), ".tmp", `e2e-${randomUUID()}`);
 const nowSeconds = () => Math.floor(Date.now() / 1000);
 
@@ -131,7 +135,7 @@ describe("@pkcprotocol/active-page-sort on a real community", () => {
         ...community.settings,
         challenges: [], // no captcha: the test publishes programmatically
         pages: {
-          posts: [{ path: PACKAGE_ENTRY, options: { [NO_BUMP_KEYWORDS_OPTION]: "sage" }, preloaded: true }],
+          posts: [{ path: PACKAGE_ENTRY, options: { [NO_BUMP_KEYWORDS_OPTION]: "sage", [BUMP_LIMIT_OPTION]: String(BUMP_LIMIT) }, preloaded: true }],
           replies: [{ name: "old", preloaded: true }]
         }
       }
@@ -178,6 +182,7 @@ describe("@pkcprotocol/active-page-sort on a real community", () => {
       expect(published, "community.pageSorts.posts.active").toBeDefined();
       expect(published?.name, "a path entry publishes no registry name").toBeUndefined();
       expect(published?.publicOptions?.[NO_BUMP_KEYWORDS_OPTION]).toBe("sage");
+      expect(published?.publicOptions?.[BUMP_LIMIT_OPTION]).toBe(String(BUMP_LIMIT));
       expect(published?.publicOptions?.["pinnedFirst"]).toBe("true");
       expect(Object.keys(instance.posts.pages)).toEqual(["active"]);
     }
@@ -329,6 +334,25 @@ describe("@pkcprotocol/active-page-sort on a real community", () => {
     const walked = activePosts(remote).flatMap(walkReplies);
     expect(walked.find((entry) => entry.commentUpdate.cid === newerSage.cid)?.commentUpdate.edit?.deleted, "the reply page keeps the tombstone").toBe(true);
     expect(walked.some((entry) => entry.commentUpdate.cid === newerUnderSage.cid), "and the reply under it").toBe(true);
+    expectClientOrderToMatch();
+  });
+
+  it("a reply past the bump limit does not bump the older thread", async () => {
+    // The older thread holds 4 counted replies here (the deleted depth-3 reply no longer counts). Its 5th, the last
+    // inside the limit, bumps it; the newer thread takes the top back; the 6th, past the limit, does not bump.
+    const fifth = await reply(older, "the last reply inside the bump limit");
+    let posts = await waitForThread(older, fifth.timestamp, "the 5th counted reply to land on the older thread");
+    expect(posts.find((post) => post.cid === older.cid)?.replyCount).toBe(BUMP_LIMIT);
+    expect(order(posts)).toEqual([older.cid, newer.cid]);
+
+    const newerBump = await reply(newer, "bumping the newer thread back to the top");
+    posts = await waitForThread(newer, newerBump.timestamp, "the bump reply to land on the newer thread");
+    expect(order(posts)).toEqual([newer.cid, older.cid]);
+
+    const pastLimit = await reply(older, "past the bump limit, this does not bump");
+    posts = await waitForThread(older, pastLimit.timestamp, "the reply past the bump limit to land on the older thread");
+    expect(posts.find((post) => post.cid === older.cid)?.replyCount).toBe(BUMP_LIMIT + 1);
+    expect(order(posts), "a thread past its bump limit stays behind").toEqual([newer.cid, older.cid]);
     expectClientOrderToMatch();
   });
 });
