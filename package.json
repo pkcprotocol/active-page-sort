@@ -1,6 +1,6 @@
 {
   "name": "@pkcprotocol/active-page-sort",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Bump-order (active) page sort for pkc-js communities where replies carrying a configured keyword, such as sage, do not bump the thread",
   "type": "module",
   "main": "./dist/index.js",

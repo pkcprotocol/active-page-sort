@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.0.4](https://github.com/pkcprotocol/active-page-sort/compare/v0.0.3...v0.0.4) (2026-10-18)
+
+### Features
+
+* apply the published exclusions to the replies inside score ([284e212](https://github.com/pkcprotocol/active-page-sort/commit/284e212cf054304600a75367abe2b625a35ae07f))
+
 ## [0.0.3](https://github.com/pkcprotocol/active-page-sort/compare/v0.0.2...v0.0.3) (2026-10-17)
 
 ## [0.0.2](https://github.com/pkcprotocol/active-page-sort/compare/v0.0.1...v0.0.2) (2026-10-17)
