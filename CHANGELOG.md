@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.0.6](https://github.com/pkcprotocol/active-page-sort/compare/v0.0.5...v0.0.6) (2026-10-18)
+
+### Features
+
+* add a bumpLimit option, replies past a thread's first N do not bump it ([767f7ac](https://github.com/pkcprotocol/active-page-sort/commit/767f7ac7c59f15dc498239968d80a526f709d14d)), closes [#3](https://github.com/pkcprotocol/active-page-sort/issues/3)
+
 ## [0.0.5](https://github.com/pkcprotocol/active-page-sort/compare/v0.0.4...v0.0.5) (2026-10-18)
 
 ### Features
