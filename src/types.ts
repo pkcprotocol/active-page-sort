@@ -28,19 +28,13 @@ export type {
 /** One `settings.pages.posts[i]` entry as pkc-js hands it to the factory. Alias of pkc-js's `CommunityPageSortSetting`. */
 export type PageSortSettingsEntry = CommunityPageSortSetting;
 
-/** The subset of a reply this package reads. A `PageSortReplyEntry` and a page entry are both supersets. */
+/**
+ * The subset of a reply this package reads. A `PageSortReplyEntry` and a page entry's `raw` are both supersets;
+ * the optional fields accept an explicit `undefined`, as page entries carry them.
+ */
 export interface NoBumpReplyLike {
   comment: { timestamp: number; content?: string | undefined };
-}
-
-/**
- * The subset of a reply `applyReplyExclusions` reads. A `PageSortReplyEntry` and a page entry's `raw` are both
- * supersets; the optional fields accept an explicit `undefined`, as page entries carry them.
- */
-export interface ExcludableReplyLike {
-  comment: { parentCid?: string | undefined };
   commentUpdate: {
-    cid: string;
     removed?: boolean | undefined;
     approved?: boolean | undefined;
     pendingApproval?: boolean | undefined;

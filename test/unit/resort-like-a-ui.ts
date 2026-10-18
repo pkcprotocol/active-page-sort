@@ -2,8 +2,8 @@ import type { PageSortFileFactory, PageSortReplyEntry, PageSortScoreArgs, PageSo
 
 // The pkc-js "Client side" guidance (docs/protocol/page-sorts.md) as runnable code: pkc-js exports no
 // sorter, a UI applies the package's `score` itself. Used by the tests to check that a page re-sorted this
-// way lands in the order the community publishes. It passes the walked replies as they are, exclusions
-// included: filtering them is the package's job (`applyReplyExclusions` inside `score`), not the UI's.
+// way lands in the order the community publishes. It passes the walked replies as they are, tombstones
+// included: skipping what the published exclude* options drop is the package's job (inside `score`), not the UI's.
 
 export interface PageEntry {
   comment: PageSortScoreArgs["comment"];

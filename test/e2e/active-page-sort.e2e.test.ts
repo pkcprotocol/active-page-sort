@@ -14,7 +14,7 @@ import { startKuboDaemon, type KuboDaemon } from "./kubo-daemon.js";
 // `community.pageSorts`. A `sage` reply to the older thread leaves it behind the newer one; a normal reply
 // then bumps it ahead. Then the same rules down the tree: a normal reply under a sage reply bumps, sage
 // replies at depth 2 and 3 do not, a normal reply at depth 3 does until its author deletes it, and deleting
-// a sage reply takes the normal reply under it out of the count. The remote reader is a second PKC on the
+// a sage reply leaves a tombstone whose normal reply under it still bumps (pkc-js's "Which replies count"). The remote reader is a second PKC on the
 // same daemon, loading the record over IPNS like a UI would, and re-sorting the page itself from the reply
 // tree it walked. Run with `npm run test:e2e` (builds first: `path` points
 // at dist/index.js).
@@ -222,7 +222,7 @@ describe("@pkcprotocol/active-page-sort on a real community", () => {
   let newerSageSigner: Signer;
 
   // What a UI does with the remote page: walk every reply page, re-sort with the published options, from a
-  // reversed input so the re-sort does the work. The walk goes in unfiltered: score applies the exclusions.
+  // reversed input so the re-sort does the work. The walk goes in unfiltered: score skips the tombstones.
   function expectClientOrderToMatch(): void {
     const posts = activePosts(remote);
     const published = remote.pageSorts?.posts?.["active"];
@@ -303,13 +303,13 @@ describe("@pkcprotocol/active-page-sort on a real community", () => {
     expect(order(posts)).toEqual([newer.cid, older.cid]);
   });
 
-  it("a client re-sort of the raw walk still lands on the community's order: the walk keeps the deleted reply, score drops it", () => {
+  it("a client re-sort of the raw walk still lands on the community's order: the walk keeps the deleted reply, score skips it", () => {
     const walked = activePosts(remote).flatMap(walkReplies);
     expect(walked.find((entry) => entry.commentUpdate.cid === olderDeep.cid)?.commentUpdate.edit?.deleted, "the reply page keeps the deleted reply").toBe(true);
     expectClientOrderToMatch();
   });
 
-  it("deleting a sage reply cuts the normal reply under it, so the newer thread falls back to its post time", async () => {
+  it("deleting a sage reply leaves a tombstone: the normal reply under it still bumps the newer thread", async () => {
     if (!newerSage.cid) throw new Error("sage reply has no cid");
     await publishAndVerify(
       await ownerPKC.createCommentEdit({
@@ -319,14 +319,16 @@ describe("@pkcprotocol/active-page-sort on a real community", () => {
         signer: newerSageSigner
       })
     );
-    // replyCount makes the same cut as the sort. lastReplyTimestamp does not: its SQL filters deleted and removed
-    // replies only below depth 1, so it keeps a deleted direct reply and its subtree, one more reason to ignore it.
+    // replyCount follows the same rule as the sort: the tombstone drops out, the depth-2 reply under it stays.
     const posts = await waitForActivePage(
       remote,
-      (page) => page.some((post) => post.cid === newer.cid && post.replyCount === 0),
-      "the deleted sage reply and the depth-2 reply under it to drop out of the newer thread"
+      (page) => page.some((post) => post.cid === newer.cid && post.replyCount === 1),
+      "the deleted sage reply to drop out of the newer thread's reply count"
     );
-    expect(order(posts)).toEqual([older.cid, newer.cid]);
+    expect(order(posts), "cutting the subtree would sink the newer thread behind the older one").toEqual([newer.cid, older.cid]);
+    const walked = activePosts(remote).flatMap(walkReplies);
+    expect(walked.find((entry) => entry.commentUpdate.cid === newerSage.cid)?.commentUpdate.edit?.deleted, "the reply page keeps the tombstone").toBe(true);
+    expect(walked.some((entry) => entry.commentUpdate.cid === newerUnderSage.cid), "and the reply under it").toBe(true);
     expectClientOrderToMatch();
   });
 });

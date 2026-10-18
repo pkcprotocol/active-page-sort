@@ -110,11 +110,12 @@ describe("score", () => {
   it("is the built-in active order when the option is unset", () => {
     expect(score([buildReply({ timestamp: 1_900, content: "sage" })], buildSettings())).toBe(1_900);
   });
-  it("does not count a deleted reply, or the normal reply under it, when the options exclude deleted comments", () => {
+  it("skips a deleted reply but counts the normal reply under it when the options exclude deleted comments", () => {
     const options = { [NO_BUMP_KEYWORDS_OPTION]: "sage", excludeDeletedComments: "true" };
-    const deleted = buildReply({ timestamp: 1_500, content: "bump", commentUpdate: { edit: { deleted: true } } });
-    const under = buildReply({ timestamp: 1_600, content: "bump", parentCid: deleted.commentUpdate.cid, depth: 2 });
-    expect(score([deleted, under], buildSettings(options))).toBe(1_000);
+    const deleted = buildReply({ timestamp: 1_600, content: "bump", commentUpdate: { edit: { deleted: true } } });
+    const under = buildReply({ timestamp: 1_500, content: "bump", parentCid: deleted.commentUpdate.cid, depth: 2 });
+    expect(score([deleted, under], buildSettings(options))).toBe(1_500);
+    expect(score([deleted], buildSettings(options))).toBe(1_000);
     expect(score([deleted, under])).toBe(1_600);
   });
   it("never declines: a saged thread sinks, it does not disappear", () => {
@@ -225,10 +226,10 @@ describe("a client re-sorting threads with nested replies walks every level", ()
   });
 });
 
-describe("a client re-sorting a raw reply-page walk: score drops what the post sort excluded", () => {
-  // Reply pages keep deleted and removed replies (the replies scope's exclusions), the post sort does not,
-  // and the community never reaches a reply under an excluded one. The published publicOptions say which,
-  // and score applies them, so the UI passes the walk unfiltered.
+describe("a client re-sorting a raw reply-page walk: tombstones arrive and score skips them", () => {
+  // Reply pages keep removed and deleted replies as tombstones (the replies scope's defaults), and pkc-js passes
+  // them to score on the community too (pkc-js#407). score skips what the published exclude* options drop and
+  // keeps the replies under them, so the UI passes the walk unfiltered.
   const POST_EXCLUSIONS = {
     [NO_BUMP_KEYWORDS_OPTION]: "sage",
     pinnedFirst: "true",
@@ -244,29 +245,33 @@ describe("a client re-sorting a raw reply-page walk: score drops what the post s
     resortLikeAUi({ comments: [h, g], factory: activePageSort, pageSortSettings: buildSettings(options), baseTimestamp: BASE_TIMESTAMP, replies }).map(
       (entry) => entry.comment.title
     );
-  const excluded: [string, Partial<ReturnType<typeof buildReply>["commentUpdate"]>][] = [
+  const skipped: [string, Partial<ReturnType<typeof buildReply>["commentUpdate"]>][] = [
     ["deleted by its author", { edit: { deleted: true } }],
     ["removed by a moderator", { removed: true }],
     ["disapproved", { approved: false }],
     ["pending approval", { pendingApproval: true }]
   ];
 
-  it("a normal reply still bumps when nothing is excluded", () => {
+  it("a normal reply bumps", () => {
     expect(rank([buildReply({ timestamp: 5_000, content: "bump", parentCid: g.commentUpdate.cid })])).toEqual(["G", "H"]);
   });
-  for (const [what, commentUpdate] of excluded) {
+  for (const [what, commentUpdate] of skipped) {
     it(`a ${what} reply does not bump`, () => {
       expect(rank([buildReply({ timestamp: 5_000, content: "bump", parentCid: g.commentUpdate.cid, commentUpdate })])).toEqual(["H", "G"]);
     });
   }
-  it("a normal reply under an excluded reply does not bump: the walk never reaches it", () => {
+  it("a normal reply under a deleted sage reply bumps: the tombstone does not hide it", () => {
     const deletedSage = buildReply({ timestamp: 4_000, content: "sage", parentCid: g.commentUpdate.cid, commentUpdate: { edit: { deleted: true } } });
     const under = buildReply({ timestamp: 5_000, content: "answer", parentCid: deletedSage.commentUpdate.cid, depth: 2 });
-    const deeper = buildReply({ timestamp: 6_000, content: "deeper", parentCid: under.commentUpdate.cid, depth: 3 });
-    expect(rank([deeper, under, deletedSage])).toEqual(["H", "G"]);
+    expect(rank([under, deletedSage])).toEqual(["G", "H"]);
   });
   it("a deleted reply counts again when the community publishes excludeDeletedComments false", () => {
     const deleted = buildReply({ timestamp: 5_000, content: "bump", parentCid: g.commentUpdate.cid, commentUpdate: { edit: { deleted: true } } });
     expect(rank([deleted], { ...POST_EXCLUSIONS, excludeDeletedComments: "false" })).toEqual(["G", "H"]);
+  });
+  it("a sage reply under a removed reply still does not bump", () => {
+    const removed = buildReply({ timestamp: 4_000, content: "bump", parentCid: g.commentUpdate.cid, commentUpdate: { removed: true } });
+    const saged = buildReply({ timestamp: 5_000, content: "sage", parentCid: removed.commentUpdate.cid, depth: 2 });
+    expect(rank([saged, removed])).toEqual(["H", "G"]);
   });
 });

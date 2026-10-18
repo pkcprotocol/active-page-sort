@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { EXCLUSION_OPTIONS, NO_BUMP_KEYWORDS_OPTION, applyReplyExclusions, bumpTimestamp, isNoBumpContent, splitKeywords } from "../../src/no-bump.js";
-import { POST_CID, buildReply } from "./fixtures.js";
+import { EXCLUSION_OPTIONS, NO_BUMP_KEYWORDS_OPTION, bumpTimestamp, isCountedReply, isNoBumpContent, splitKeywords } from "../../src/no-bump.js";
+import { buildReply } from "./fixtures.js";
 
 describe("the option key is the wire contract", () => {
   it("is literally noBumpKeywords, which UIs read off community.pageSorts.posts.active.publicOptions", () => {
@@ -56,7 +56,7 @@ describe("isNoBumpContent", () => {
 describe("bumpTimestamp", () => {
   const keywords = ["sage"];
   const post = 1_000;
-  const reply = (timestamp: number, content?: string) => ({ comment: { timestamp, content } });
+  const reply = (timestamp: number, content?: string) => ({ comment: { timestamp, content }, commentUpdate: {} });
 
   it("is the post's own timestamp with no replies", () => {
     expect(bumpTimestamp({ postTimestamp: post, replies: [], keywords })).toBe(post);
@@ -79,62 +79,69 @@ describe("bumpTimestamp", () => {
   });
 });
 
-describe("applyReplyExclusions", () => {
+describe("isCountedReply: the exclude* options on a reply's own CommentUpdate", () => {
   const ON = {
     excludeRemovedComments: "true",
     excludeDeletedComments: "true",
     excludeCommentWithApprovedFalse: "true",
     excludeCommentPendingApproval: "true"
   };
-  const cids = (replies: ReturnType<typeof buildReply>[]) => replies.map((reply) => reply.commentUpdate.cid).sort();
-  const apply = (replies: ReturnType<typeof buildReply>[], options: Record<string, string> = ON) =>
-    applyReplyExclusions({ postCid: POST_CID, replies, options });
+  const cases = [
+    ["removed", "excludeRemovedComments", { removed: true }],
+    ["deleted", "excludeDeletedComments", { edit: { deleted: true } }],
+    ["disapproved", "excludeCommentWithApprovedFalse", { approved: false }],
+    ["pending", "excludeCommentPendingApproval", { pendingApproval: true }]
+  ] as const;
 
-  it("re-applies exactly the four exclusions a sort file can check", () => {
-    // excludeCommentsWithDifferentCommunityAddress needs the community's address, which score never gets.
+  it("checks exactly the four exclusions a sort file can apply", () => {
+    // excludeCommentsWithDifferentCommunityAddress needs the community's address; pkc-js applies it before score.
     expect(Object.keys(EXCLUSION_OPTIONS).sort()).toEqual(Object.keys(ON).sort());
   });
-  it("keeps every reply of a clean tree, at every depth, in any order", () => {
-    const d1 = buildReply({ timestamp: 1_100 });
-    const d2 = buildReply({ timestamp: 1_200, parentCid: d1.commentUpdate.cid, depth: 2 });
-    const d3 = buildReply({ timestamp: 1_300, parentCid: d2.commentUpdate.cid, depth: 3 });
-    expect(cids(apply([d3, d1, d2]))).toEqual(cids([d1, d2, d3]));
+  it("counts a present reply", () => {
+    expect(isCountedReply(buildReply({ timestamp: 1_100 }), ON)).toBe(true);
+    expect(isCountedReply(buildReply({ timestamp: 1_100, commentUpdate: { approved: true, removed: false, pendingApproval: false } }), ON)).toBe(true);
   });
-  it("is a no-op on the list pkc-js already filtered", () => {
-    const replies = [buildReply({ timestamp: 1_100 }), buildReply({ timestamp: 1_200 })];
-    expect(apply(replies)).toHaveLength(2);
+  for (const [what, option, commentUpdate] of cases) {
+    it(`does not count a ${what} reply while ${option} is on, and counts it while it is off`, () => {
+      const reply = buildReply({ timestamp: 1_100, commentUpdate });
+      expect(isCountedReply(reply, ON)).toBe(false);
+      expect(isCountedReply(reply, { ...ON, [option]: "false" })).toBe(true);
+      expect(isCountedReply(reply, {})).toBe(true);
+    });
+  }
+  it("parses flags like pkc-js: trimmed, case-insensitive true", () => {
+    const deleted = buildReply({ timestamp: 1_100, commentUpdate: { edit: { deleted: true } } });
+    expect(isCountedReply(deleted, { excludeDeletedComments: " TRUE " })).toBe(false);
+    expect(isCountedReply(deleted, { excludeDeletedComments: "yes" })).toBe(true);
   });
+});
+
+describe("bumpTimestamp with tombstones", () => {
+  const keywords = ["sage"];
+  const options = { excludeRemovedComments: "true", excludeDeletedComments: "true", excludeCommentWithApprovedFalse: "true", excludeCommentPendingApproval: "true" };
   for (const [what, commentUpdate] of [
     ["removed", { removed: true }],
     ["deleted", { edit: { deleted: true } }],
-    ["disapproved", { approved: false }],
-    ["pending", { pendingApproval: true }]
+    ["disapproved", { approved: false }]
   ] as const) {
-    it(`drops a ${what} reply and everything under it`, () => {
-      const kept = buildReply({ timestamp: 1_050 });
-      const dropped = buildReply({ timestamp: 1_100, commentUpdate });
-      const under = buildReply({ timestamp: 1_200, parentCid: dropped.commentUpdate.cid, depth: 2 });
-      const deeper = buildReply({ timestamp: 1_300, parentCid: under.commentUpdate.cid, depth: 3 });
-      expect(cids(apply([deeper, under, dropped, kept]))).toEqual(cids([kept]));
+    it(`skips a ${what} reply but still counts the present replies under it`, () => {
+      const tombstone = buildReply({ timestamp: 1_500, content: "bump", commentUpdate });
+      const under = buildReply({ timestamp: 1_300, content: "answer", parentCid: tombstone.commentUpdate.cid, depth: 2 });
+      expect(bumpTimestamp({ postTimestamp: 1_000, replies: [tombstone], keywords, options })).toBe(1_000);
+      expect(bumpTimestamp({ postTimestamp: 1_000, replies: [tombstone, under], keywords, options })).toBe(1_300);
     });
   }
-  it("keeps what an unset or false flag would drop", () => {
-    const deleted = buildReply({ timestamp: 1_100, commentUpdate: { edit: { deleted: true } } });
-    const removed = buildReply({ timestamp: 1_200, commentUpdate: { removed: true } });
-    expect(apply([deleted, removed], {})).toHaveLength(2);
-    expect(apply([deleted, removed], { excludeDeletedComments: "false", excludeRemovedComments: "false" })).toHaveLength(2);
+  it("skips a pending reply", () => {
+    const pending = buildReply({ timestamp: 1_500, content: "bump", commentUpdate: { pendingApproval: true } });
+    expect(bumpTimestamp({ postTimestamp: 1_000, replies: [pending], keywords, options })).toBe(1_000);
   });
-  it("parses flags like pkc-js: trimmed, case-insensitive true", () => {
-    const deleted = buildReply({ timestamp: 1_100, commentUpdate: { edit: { deleted: true } } });
-    expect(apply([deleted], { excludeDeletedComments: " TRUE " })).toEqual([]);
-    expect(apply([deleted], { excludeDeletedComments: "yes" })).toHaveLength(1);
+  it("still skips a saged reply under a tombstone", () => {
+    const tombstone = buildReply({ timestamp: 1_500, commentUpdate: { removed: true } });
+    const saged = buildReply({ timestamp: 1_600, content: "sage", parentCid: tombstone.commentUpdate.cid, depth: 2 });
+    expect(bumpTimestamp({ postTimestamp: 1_000, replies: [tombstone, saged], keywords, options })).toBe(1_000);
   });
-  it("drops a reply whose parent is not in the list, as the community never reaches it", () => {
-    const orphan = buildReply({ timestamp: 1_100, parentCid: "QmNotInTheList", depth: 2 });
-    expect(apply([orphan])).toEqual([]);
-  });
-  it("returns the entries it was given, not copies", () => {
-    const reply = buildReply({ timestamp: 1_100 });
-    expect(apply([reply])[0]).toBe(reply);
+  it("counts a deleted reply when no options are passed: without the flags nothing is skipped", () => {
+    const deleted = buildReply({ timestamp: 1_500, content: "bump", commentUpdate: { edit: { deleted: true } } });
+    expect(bumpTimestamp({ postTimestamp: 1_000, replies: [deleted], keywords })).toBe(1_500);
   });
 });

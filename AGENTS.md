@@ -28,17 +28,16 @@ Conventions specific to this package:
 - The match is a whole line equal to the keyword, exact and case-sensitive. `src/no-bump.ts` imports
   nothing and must keep matching what the README describes, because UIs copy or bundle it for the browser.
 - `score` is sync and never returns `null`: a saged thread sinks, it is not filtered. It reads
-  `comment.timestamp`, `commentUpdate.cid`, the reserved `exclude*` options, and per reply `parentCid`,
-  `timestamp`, `content`, and the CommentUpdate's `cid`, `removed`, `approved`, `pendingApproval` and
-  `edit.deleted`. There is no database access and no network; a need for either is a later iteration of
-  the pkc-js contract, not a reason to reach around it.
-- `applyReplyExclusions` (in `src/no-bump.ts`) re-applies pkc-js's reply exclusions inside `score`. On the
-  community it is a no-op, the list is already filtered; on a client it turns a raw reply-page walk into
-  the set the community scored. It must keep matching pkc-js's `applyPageSortExclusions` and its subtree
-  cut (`createDescendantsLookup`, `src/pages/page-sort-scoring.ts`), flag parsing included (trimmed,
-  case-insensitive `true`). A new reserved exclusion in pkc-js means a release here.
-  `excludeCommentsWithDifferentCommunityAddress` is left out on purpose: `score` has no community address
-  (pkc-js#401).
+  `comment.timestamp`, the reserved `exclude*` options, and per reply `timestamp`, `content`, and the
+  CommentUpdate's `removed`, `approved`, `pendingApproval` and `edit.deleted`. There is no database access and
+  no network; a need for either is a later iteration of the pkc-js contract, not a reason to reach around it.
+- `isCountedReply` / `bumpTimestamp` (in `src/no-bump.ts`) apply the `exclude*` options to each reply's own
+  CommentUpdate, the tombstone rule of pkc-js's "Which replies count" (`docs/protocol/comment-lifecycle.md`):
+  a dropped reply does not bump, the replies under it are judged on their own, never cut. pkc-js passes every
+  reply to `score` except foreign and CommentUpdate-less ones (pkc-js#407). Flag parsing matches pkc-js
+  (trimmed, case-insensitive `true`). With the `posts` defaults it must match the built-in `active`. A new
+  reserved exclusion in pkc-js means a release here. `excludeCommentsWithDifferentCommunityAddress` is left
+  out on purpose: pkc-js applies it, and `score` has no community address (pkc-js#401).
 - The scorer ignores `commentUpdate.lastReplyTimestamp` on purpose. That aggregate counts saged replies.
 - `validatePageSortSettings` is sync and rejects only what can never work (empty list, line break, size
   bounds). An unset option is valid and means plain bump order.
