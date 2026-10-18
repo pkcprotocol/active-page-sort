@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.0.5](https://github.com/pkcprotocol/active-page-sort/compare/v0.0.4...v0.0.5) (2026-10-18)
+
+### Features
+
+* follow pkc-js's tombstone rule, a dropped reply no longer hides the replies under it ([8986a6e](https://github.com/pkcprotocol/active-page-sort/commit/8986a6eb50c50b1c6f3e9320249b8cb901933719)), closes [pkc-js#407](https://github.com/pkcprotocol/pkc-js/issues/407) [#2](https://github.com/pkcprotocol/active-page-sort/issues/2)
+
 ## [0.0.4](https://github.com/pkcprotocol/active-page-sort/compare/v0.0.3...v0.0.4) (2026-10-18)
 
 ### Features
