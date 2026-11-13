@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.0.8](https://github.com/pkcprotocol/active-page-sort/compare/v0.0.7...v0.0.8) (2026-11-13)
+
+### Features
+
+* find the sort under an owner-chosen wire key, follow pkc-js 0.0.143 ([#4](https://github.com/pkcprotocol/active-page-sort/issues/4)) ([d96ebb3](https://github.com/pkcprotocol/active-page-sort/commit/d96ebb36fa63215f2baedbf02690fad3333e27c7))
+
 ## [0.0.7](https://github.com/pkcprotocol/active-page-sort/compare/v0.0.6...v0.0.7) (2026-10-18)
 
 ## [0.0.6](https://github.com/pkcprotocol/active-page-sort/compare/v0.0.5...v0.0.6) (2026-10-18)
