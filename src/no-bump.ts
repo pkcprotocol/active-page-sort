@@ -4,10 +4,17 @@ import type { NoBumpReplyLike } from "./types.js";
 // render a "sage" marker or to validate the reply form. Keep this file identical in behaviour to the
 // README's description of the match: both are the contract a board's users rely on.
 
-/** The option key under `settings.pages.posts[i].options`. Published as `community.pageSorts.posts.active.publicOptions.noBumpKeywords`. */
+/**
+ * The name this package is registered under in `PKC.pageSorts`, and so the `name` a community publishes for it in
+ * `community.pageSorts.posts[key]`. The wire key is the owner's choice (`active` by default); the name is how a UI
+ * recognises the sort.
+ */
+export const PACKAGE_NAME = "@pkcprotocol/active-page-sort";
+
+/** The option key under `settings.pages.posts[i].options`. Published as `community.pageSorts.posts[key].publicOptions.noBumpKeywords`. */
 export const NO_BUMP_KEYWORDS_OPTION = "noBumpKeywords";
 
-/** The option key for the bump limit. Published as `community.pageSorts.posts.active.publicOptions.bumpLimit`. */
+/** The option key for the bump limit. Published as `community.pageSorts.posts[key].publicOptions.bumpLimit`. */
 export const BUMP_LIMIT_OPTION = "bumpLimit";
 
 /** Comma-separated list to keywords: trimmed, empty entries dropped, duplicates kept out. */
@@ -31,6 +38,38 @@ export const parseBumpLimit = (raw: string | undefined): number | undefined => {
   return Number.isSafeInteger(limit) ? limit : undefined;
 };
 
+/** One value of `community.pageSorts.posts`, as far as this package reads it. pkc-js's `CommunityPageSort` is a superset. */
+export interface PublishedPageSortLike {
+  name?: string | undefined;
+  publicOptions?: Readonly<Record<string, string>> | undefined;
+}
+
+/** This package's sort as a community publishes it: the wire key its pages are under, and the options it ran with. */
+export interface PublishedActivePageSort {
+  /** The key under `community.posts.pages` / `pageCids` and `community.pageSorts.posts`. `active` unless the owner chose another. */
+  sortName: string;
+  /** `PACKAGE_NAME`, or `undefined` for a sort the community loaded by file path. */
+  name: string | undefined;
+  publicOptions: Readonly<Record<string, string>>;
+}
+
+/**
+ * The entries of `community.pageSorts.posts` that are this sort, in the community's order. Pass
+ * `community.pageSorts?.posts`. The key is a label the owner chooses (an entry's `sortName`, pkc-js#483), so the sort
+ * is recognised by what is published under the key: a `name` equal to `PACKAGE_NAME`, or, for a file loaded by
+ * `path`, which publishes no `name`, a `noBumpKeywords` or `bumpLimit` among the `publicOptions`. Empty on a board
+ * without `pageSorts` or without this sort. An owner may list the sort more than once, under different keys.
+ */
+export const findPublishedActivePageSorts = (postSorts: Readonly<Record<string, PublishedPageSortLike>> | undefined): PublishedActivePageSort[] => {
+  const found: PublishedActivePageSort[] = [];
+  for (const [sortName, published] of Object.entries(postSorts ?? {})) {
+    const publicOptions = published.publicOptions ?? {};
+    const carriesAnOption = publicOptions[NO_BUMP_KEYWORDS_OPTION] !== undefined || publicOptions[BUMP_LIMIT_OPTION] !== undefined;
+    if (published.name === PACKAGE_NAME || (published.name === undefined && carriesAnOption)) found.push({ sortName, name: published.name, publicOptions });
+  }
+  return found;
+};
+
 /**
  * Whether a reply is a no-bump reply: its content has a whole line equal to one of the keywords. Exact and
  * case-sensitive, so `sage` in prose ("sage is overused") still bumps, while a content of `sage`, or a
@@ -45,8 +84,8 @@ export const isNoBumpContent = (content: unknown, keywords: readonly string[]): 
 
 /**
  * The reserved exclusion options a reply's own CommentUpdate can be checked against, and what each drops.
- * `excludeCommentsWithDifferentCommunityAddress` is not here: pkc-js drops foreign replies before `score` runs,
- * and checking it needs the community's address, which a sort file is never given (pkc-js#401).
+ * Replies of another community are not a case here: pkc-js drops them before `score` runs (the always-on
+ * community identity rule, pkc-js#401), and a sort file is never given the community's address to check it.
  */
 export const EXCLUSION_OPTIONS = {
   excludeRemovedComments: (update: NoBumpReplyLike["commentUpdate"]) => update.removed === true,

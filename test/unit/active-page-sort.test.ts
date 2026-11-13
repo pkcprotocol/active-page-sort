@@ -18,9 +18,17 @@ const BASE_TIMESTAMP = 1_700_000_000;
 describe("the file pkc-js receives", () => {
   const file = activePageSort({ pageSortSettings: SAGE });
 
-  it("publishes under the built-in's wire key so UIs reading posts.pages.active keep working", () => {
+  it("publishes under the built-in's wire key by default so UIs reading posts.pages.active keep working", () => {
     expect(SORT_NAME).toBe("active");
     expect(file.sortName).toBe("active");
+  });
+  it("keeps its own default key and its order when the entry sets a sortName: the key is the owner's", () => {
+    const renamed = activePageSort({ pageSortSettings: { ...SAGE, sortName: "bump" } });
+    expect(renamed.sortName).toBe("active");
+    expect(() => validatePageSortSettings({ pageSortSettings: { ...SAGE, sortName: "bump" } })).not.toThrow();
+    const args = { comment: buildComment({ timestamp: 1_000 }), commentUpdate: buildCommentUpdate({ cid: POST_CID }), options: SAGE.options ?? {}, baseTimestamp: BASE_TIMESTAMP, replies: [buildReply({ timestamp: 2_000 }), buildReply({ timestamp: 3_000, content: "sage" })] };
+    expect(renamed.score(args)).toBe(file.score(args));
+    expect(renamed.score(args)).toBe(2_000);
   });
   it("is a reply-dependent post sort", () => {
     expect(file.scope).toBe("posts");
@@ -247,8 +255,7 @@ describe("a client re-sorting a raw reply-page walk: tombstones arrive and score
     excludeRemovedComments: "true",
     excludeDeletedComments: "true",
     excludeCommentPendingApproval: "true",
-    excludeCommentWithApprovedFalse: "true",
-    excludeCommentsWithDifferentCommunityAddress: "true"
+    excludeCommentWithApprovedFalse: "true"
   };
   const g: PageEntry = { comment: buildComment({ timestamp: 1_000, title: "G" }), commentUpdate: buildCommentUpdate({ cid: nextCid(), replyCount: 2 }) };
   const h: PageEntry = { comment: buildComment({ timestamp: 3_000, title: "H" }), commentUpdate: buildCommentUpdate({ cid: nextCid() }) };

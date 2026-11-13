@@ -4,7 +4,7 @@ import * as path from "node:path";
 import { randomUUID } from "node:crypto";
 import PKC from "@pkcprotocol/pkc-js";
 import activePageSort from "../../src/active-page-sort.js";
-import { BUMP_LIMIT_OPTION, NO_BUMP_KEYWORDS_OPTION } from "../../src/no-bump.js";
+import { BUMP_LIMIT_OPTION, NO_BUMP_KEYWORDS_OPTION, PACKAGE_NAME, findPublishedActivePageSorts } from "../../src/no-bump.js";
 import type { PageSortReplyEntry } from "../../src/types.js";
 import { resortLikeAUi, type PageEntry } from "../unit/resort-like-a-ui.js";
 import { startKuboDaemon, type KuboDaemon } from "./kubo-daemon.js";
@@ -31,6 +31,8 @@ const PACKAGE_ENTRY = path.resolve(process.cwd(), "dist/index.js");
 // High enough that every earlier step stays inside it (the older thread peaks at 5 counted replies), so only the
 // last step crosses it.
 const BUMP_LIMIT = 5;
+// The key the second entry of the same file publishes under, chosen by the owner instead of the file's `active`.
+const UNLIMITED_SORT_NAME = "activeNoLimit";
 const TMP_ROOT = path.resolve(process.cwd(), ".tmp", `e2e-${randomUUID()}`);
 const nowSeconds = () => Math.floor(Date.now() / 1000);
 
@@ -135,7 +137,11 @@ describe("@pkcprotocol/active-page-sort on a real community", () => {
         ...community.settings,
         challenges: [], // no captcha: the test publishes programmatically
         pages: {
-          posts: [{ path: PACKAGE_ENTRY, options: { [NO_BUMP_KEYWORDS_OPTION]: "sage", [BUMP_LIMIT_OPTION]: String(BUMP_LIMIT) }, preloaded: true }],
+          posts: [
+            { path: PACKAGE_ENTRY, options: { [NO_BUMP_KEYWORDS_OPTION]: "sage", [BUMP_LIMIT_OPTION]: String(BUMP_LIMIT) }, preloaded: true },
+            // The same file again under a key the owner chose (pkc-js#483), without the bump limit.
+            { path: PACKAGE_ENTRY, sortName: UNLIMITED_SORT_NAME, options: { [NO_BUMP_KEYWORDS_OPTION]: "sage" } }
+          ],
           replies: [{ name: "old", preloaded: true }]
         }
       }
@@ -188,6 +194,19 @@ describe("@pkcprotocol/active-page-sort on a real community", () => {
     }
   });
 
+  it("publishes the same file a second time under the key the owner chose, and a UI finds both", () => {
+    for (const instance of [community, remote]) {
+      const found = findPublishedActivePageSorts(instance.pageSorts?.posts);
+      expect(found.map((published) => published.sortName)).toEqual(["active", UNLIMITED_SORT_NAME]);
+      expect(found[0]?.publicOptions[BUMP_LIMIT_OPTION]).toBe(String(BUMP_LIMIT));
+      expect(found[1]?.publicOptions[NO_BUMP_KEYWORDS_OPTION]).toBe("sage");
+      expect(found[1]?.publicOptions[BUMP_LIMIT_OPTION]).toBeUndefined();
+      // Two threads fit the preloaded page, so pkc-js generates no other sort (its single-chunk shortcut): the
+      // second key is in pageSorts only, and a client holding the whole set re-sorts with the published options.
+      expect(Object.keys(instance.posts.pages)).toEqual(["active"]);
+    }
+  });
+
   it("orders the two fresh threads newest first", () => {
     expect(activePosts(remote).map((post) => post.cid)).toEqual([newer.cid, older.cid]);
   });
@@ -230,11 +249,11 @@ describe("@pkcprotocol/active-page-sort on a real community", () => {
   // reversed input so the re-sort does the work. The walk goes in unfiltered: score skips the tombstones.
   function expectClientOrderToMatch(): void {
     const posts = activePosts(remote);
-    const published = remote.pageSorts?.posts?.["active"];
+    const published = findPublishedActivePageSorts(remote.pageSorts?.posts).find((sort) => sort.sortName === "active");
     const ordered = resortLikeAUi({
       comments: [...posts].reverse().map(toPageEntry),
       factory: activePageSort,
-      pageSortSettings: { name: published?.name ?? "active", options: published?.publicOptions ?? {} },
+      pageSortSettings: { name: published?.name ?? PACKAGE_NAME, options: published?.publicOptions ?? {} },
       baseTimestamp: nowSeconds(),
       replies: posts.flatMap(walkReplies)
     });

@@ -14,7 +14,7 @@ A board's catalog shows threads in bump order: the thread with the newest reply 
 - A saged thread, or one past its bump limit, **sinks, it is never hidden**. The sort ranks, it does not filter.
 - With both options unset the sort is plain bump order, identical to pkc-js's built-in `active`.
 
-The sort publishes under the wire key `active`, the same key as the built-in, so a UI that already reads `community.posts.pages.active` shows the saged order without any change. The community also publishes what the key means in `community.pageSorts.posts.active`, including the keyword list, so a UI can tell this sort from the built-in and render a sage marker on matching replies.
+The sort publishes under the wire key `active` by default, the same key as the built-in, so a UI that already reads `community.posts.pages.active` shows the saged order without any change. The community also publishes what the key means in `community.pageSorts.posts`, including the keyword list, so a UI can tell this sort from the built-in and render a sage marker on matching replies. The owner can publish the sort under another key (see [Choosing the wire key](#choosing-the-wire-key)), so a UI recognises it by what is published under the key, never by the key itself.
 
 The word `sage` appears nowhere in this package. The board supplies its vocabulary through the `noBumpKeywords` option, and its limit through `bumpLimit`.
 
@@ -38,8 +38,9 @@ The built-in `active` reads one number off each post's CommentUpdate (`lastReply
 
 ## Requirements
 
-- pkc-js `>=0.0.114` (configurable page sorts, `settings.pages`, the page sort types exported from the root, and tombstone replies passed to `score`, pkc-js#407)
-- Node.js `>=22` on the machine running the community
+- pkc-js `>=0.0.114` on the machine running the community (configurable page sorts, `settings.pages`, the page sort types exported from the root, and tombstone replies passed to `score`, pkc-js#407)
+- pkc-js `>=0.0.143` to publish the sort under a key other than `active` (an entry's `sortName`)
+- Node.js `>=22.19` on the machine running the community (what pkc-js requires since 0.0.132)
 - ESM-only environment
 
 ## Install and configure on your community
@@ -101,6 +102,8 @@ await community.edit({
 
 A `path` entry publishes no `name` in `community.pageSorts` (the client cannot know which package a path is). Prefer the registry `name` when you can.
 
+Without a `name`, a UI can only recognise the sort by its options: an entry with no `name` that publishes `noBumpKeywords` or `bumpLimit` is taken to be this sort. So a `path` entry with both options unset, or both listed in `privateOptions`, is not recognised as this sort by any UI. The order still applies; the UI just has nothing to show for it.
+
 ### With bitsocial-cli
 
 bitsocial-cli installs challenge packages into the data path and registers them by name; the equivalent `bitsocial page-sort install` command is planned on the same registry. Until it ships, use the `path` form above against the RPC server's filesystem:
@@ -114,9 +117,24 @@ bitsocial community edit yourboard.bso \
   '--settings.pages.replies[0].preloaded' true
 ```
 
+### Choosing the wire key
+
+The sort publishes under `active` unless the entry sets its own `sortName` (pkc-js `>=0.0.143`). That also lets you list the sort more than once, each entry under its own key:
+
+```ts
+pages: {
+    posts: [
+        { name: "@pkcprotocol/active-page-sort", options: { noBumpKeywords: "sage", bumpLimit: "300" }, preloaded: true }, // key: active
+        { name: "@pkcprotocol/active-page-sort", sortName: "activeNoLimit", options: { noBumpKeywords: "sage" } }           // key: activeNoLimit
+    ]
+}
+```
+
+Two entries resolving to the same key are rejected (`ERR_PAGE_SORT_DUPLICATE_SORT_NAME`). Renaming a key is a `settings.pages` edit like any other: the old key is gone from the record, with no alias. A UI that only reads `community.posts.pages.active` does not show a sort published under another key, so keep the default unless you know your users' UIs follow `community.pageSorts`. The key never changes the order: `score` does not read it.
+
 ### Options
 
-Page sort options are strings, like challenge options. Unlike challenge options they are **public by default**: everything set in `options` is published in `community.pageSorts.posts.active.publicOptions` unless its name is listed in the entry's `privateOptions`.
+Page sort options are strings, like challenge options. Unlike challenge options they are **public by default**: everything set in `options` is published in `community.pageSorts.posts[key].publicOptions` (`key` is `active` unless the entry sets its own `sortName`) unless its name is listed in the entry's `privateOptions`.
 
 | Option | Required | Published in `publicOptions` | Default | Description |
 |---|---|---|---|---|
@@ -124,7 +142,7 @@ Page sort options are strings, like challenge options. Unlike challenge options 
 | `bumpLimit` | no | yes, unless listed in `privateOptions` | unset (no limit) | A positive integer, e.g. `"300"`. Only a thread's first this many counted replies, saged or not, can bump it; past the limit it sinks while staying open. Counted replies are the ones the `exclude*` options keep, the same set as the thread's `replyCount` |
 | `maxAge` | no | always (reserved) | none | pkc-js reserved: a sliding window such as `"36h"`, `"7d"`, `"2w"`, `"1M"`, `"1y"`. Threads older than the window drop out of the pages (pinned threads bypass it) |
 | `pinnedFirst` | no | always (reserved) | `"true"` | pkc-js reserved: pinned threads first and outside the window. `"false"` treats them as ordinary threads |
-| `excludeRemovedComments`, `excludeDeletedComments`, `excludeCommentPendingApproval`, `excludeCommentWithApprovedFalse`, `excludeCommentsWithDifferentCommunityAddress` | no | always (reserved) | `"true"` for the `posts` scope | pkc-js reserved moderation filters on the threads the sort ranks. `score` also applies the first four to the replies: a reply one of them drops does not bump, the replies under it still do. `excludeCommentsWithDifferentCommunityAddress` is applied to replies by pkc-js before `score` runs (checking it needs the community's address, which `score` does not get, [pkc-js#401](https://github.com/pkcprotocol/pkc-js/issues/401)) |
+| `excludeRemovedComments`, `excludeDeletedComments`, `excludeCommentPendingApproval`, `excludeCommentWithApprovedFalse` | no | always (reserved) | `"true"` for the `posts` scope | pkc-js reserved moderation filters on the threads the sort ranks. `score` also applies them to the replies: a reply one of them drops does not bump, the replies under it still do. Replies that do not belong to the community never reach `score`: pkc-js drops them itself (the always-on community identity rule since pkc-js 0.0.120, which replaced the `excludeCommentsWithDifferentCommunityAddress` option, [pkc-js#401](https://github.com/pkcprotocol/pkc-js/issues/401)) |
 
 Keep `noBumpKeywords` public unless you have a reason not to: a UI reads it to know the board supports sage, to put the keyword on the wire the way the sort reads it, and to mark saged replies. With the option private the order still applies but UIs cannot do any of that. The same goes for `bumpLimit`: a UI compares it to a thread's `replyCount` to show that the thread no longer bumps. The reserved options cannot be made private (`ERR_PAGE_SORT_RESERVED_OPTION_CANNOT_BE_PRIVATE`): a client re-sorting a page must know how its comment set was filtered. Their full semantics are in the pkc-js page sorts doc, "Reserved options". If pkc-js adds a reserved exclusion, this package needs a release that applies it to replies too.
 
@@ -144,7 +162,7 @@ Failures surface as `ERR_PAGE_SORT_SETTINGS_VALIDATION_FAILED` inside pkc-js's a
 ```ts
 community.pageSorts = {
     posts: {
-        active: {
+        active: { // the wire key: the entry's `sortName` when it sets one
             name: "@pkcprotocol/active-page-sort", // absent for a path entry
             description: "Bump order where a reply whose content has a line equal to a configured keyword does not bump its thread, with an optional bump limit",
             publicOptions: {
@@ -154,8 +172,7 @@ community.pageSorts = {
                 excludeRemovedComments: "true",
                 excludeDeletedComments: "true",
                 excludeCommentPendingApproval: "true",
-                excludeCommentWithApprovedFalse: "true",
-                excludeCommentsWithDifferentCommunityAddress: "true"
+                excludeCommentWithApprovedFalse: "true"
             }
         }
     }
@@ -171,9 +188,14 @@ Nothing here is required to display the board: the community publishes the pages
 ### 1. Know the board supports sage
 
 ```ts
-const published = community.pageSorts?.posts?.active;
-const keywords = published?.publicOptions?.noBumpKeywords; // "sage", or undefined on a board without this sort
+import { findPublishedActivePageSorts } from "@pkcprotocol/active-page-sort";
+
+const [published] = findPublishedActivePageSorts(community.pageSorts?.posts); // undefined on a board without this sort
+const keywords = published?.publicOptions.noBumpKeywords; // "sage"
+const pages = published && community.posts.pages[published.sortName]; // the key is `active` unless the owner chose another
 ```
+
+Do not read `community.pageSorts.posts.active` directly. The key is a label the owner chooses: this sort may be published under another key, and on a board that publishes `pageSorts` a key named `active` may be any sort. `findPublishedActivePageSorts` recognises the sort by what is published under the key: a `name` of `@pkcprotocol/active-page-sort`, or, for a sort the community loaded by file path (which publishes no `name`), a `noBumpKeywords` or `bumpLimit` among its `publicOptions`. It returns every match in the community's order, each with its `sortName` (the wire key), `name` and `publicOptions`: an owner can list the sort more than once with different options, and a reply is saged relative to one of them. A published sort need not have pages of its own: when a board's whole comment set fits its preloaded pages, pkc-js publishes only those (its single-chunk shortcut), and a UI derives the other sorts locally (step 4).
 
 A board that never configured `settings.pages` has no `pageSorts`; its `active` is the built-in and `sage` is just text.
 
@@ -192,23 +214,29 @@ The sort file is the contract. A board that wants another convention edits the k
 ```ts
 import { isNoBumpReplyForOptions } from "@pkcprotocol/active-page-sort";
 
-const saged = isNoBumpReplyForOptions(reply.content, community.pageSorts?.posts?.active?.publicOptions);
+const saged = isNoBumpReplyForOptions(reply.content, published?.publicOptions); // `published` from step 1
 ```
 
-`isNoBumpContent(content, keywords)` and `splitKeywords(raw)` are the same test without the options lookup, and `bumpTimestamp({ postTimestamp, replies, keywords, options, bumpLimit })` gives a thread's effective bump time from a reply tree walked from reply pages, tombstones included, with the published `publicOptions` as `options` and `parseBumpLimit(publicOptions.bumpLimit)` as `bumpLimit`. `isCountedReply(reply, options)` is the exclusion check on its own. `src/no-bump.ts` imports nothing and bundles for a browser.
+`isNoBumpContent(content, keywords)` and `splitKeywords(raw)` are the same test without the options lookup, and `bumpTimestamp({ postTimestamp, replies, keywords, options, bumpLimit })` gives a thread's effective bump time from a reply tree walked from reply pages, tombstones included, with the published `publicOptions` as `options` and `parseBumpLimit(publicOptions.bumpLimit)` as `bumpLimit`. `isCountedReply(reply, options)` is the exclusion check on its own. `src/no-bump.ts`, which also holds `findPublishedActivePageSorts`, imports nothing and bundles for a browser.
 
 ### 4. Re-sort a page locally (optional)
 
 pkc-js exports no sorter: the package's `score` is the whole contract. A UI that wants to re-order threads between community publishes (a user's own reply just landed, say) applies `score` itself. This sort declares `requireReplies`, so it needs each thread's replies: walk a flat reply sort (`newFlat` / `oldFlat`) when the post carries one, otherwise the nested sort's pages recursively, at every depth. Walk all of it: every page of every chain, for every thread you re-sort. `score` receives a plain list and cannot tell a partial walk from a complete one, so a thread whose newest bump is on a page you did not fetch ranks too low, with no error. Hand each post its descendants by `parentCid`, as walked, tombstones included, and pass the published `publicOptions` as `options`. `score` skips what the published `exclude*` options drop, keeping the replies under it, so no filtering is needed on the UI side. Pass the options as published: without the `exclude*` flags nothing is skipped. Reply pages keep removed and deleted replies only while the reply sort's `excludeRemovedComments` and `excludeDeletedComments` are `"false"` (the default). A reply sort with either turned on leaves tombstones out, and a nested one loses the replies under them too, so check `community.pageSorts.replies` and walk a published reply sort that keeps them. If none does, a client cannot reproduce the community's order. The worked example of the walk and the re-sort is `test/node-and-browser/pages/page-sorts-client-test-util.ts` in pkc-js; this package's own copy of the re-sort is `test/unit/resort-like-a-ui.ts`. A re-sorted page is still one slice of one sort: re-sorting it gives that slice in another order, not the whole board.
 
 ```ts
-import activePageSort from "@pkcprotocol/active-page-sort";
+import activePageSort, { PACKAGE_NAME, findPublishedActivePageSorts } from "@pkcprotocol/active-page-sort";
 
-const published = community.pageSorts?.posts?.active;
-const file = activePageSort({ pageSortSettings: { name: published?.name ?? "active", options: published?.publicOptions ?? {} } });
+const [published] = findPublishedActivePageSorts(community.pageSorts?.posts);
+if (!published) throw Error("this board does not publish the sort");
+// The sort's own page: preloaded, or fetched from pageCids[published.sortName]. When it has neither, the board's
+// preloaded page holds the whole comment set (pkc-js's single-chunk shortcut) and is the input to re-sort.
+const cid = community.posts.pageCids[published.sortName];
+const page = community.posts.pages[published.sortName] ?? (cid ? await community.posts.getPage({ cid }) : Object.values(community.posts.pages)[0]);
+if (!page) throw Error("the board has no page to re-sort yet");
+const file = activePageSort({ pageSortSettings: { name: PACKAGE_NAME, options: published.publicOptions } });
 const scored = page.comments.map((pageComment, index) => {
     const { replies, ...commentUpdate } = pageComment.raw.commentUpdate; // score never sees the preloaded reply slice
-    return { pageComment, index, score: file.score({ comment: pageComment.raw.comment, commentUpdate, options: published?.publicOptions ?? {}, baseTimestamp: Math.round(Date.now() / 1000), replies: descendantsOf(pageComment.cid) }) };
+    return { pageComment, index, score: file.score({ comment: pageComment.raw.comment, commentUpdate, options: published.publicOptions, baseTimestamp: Math.round(Date.now() / 1000), replies: descendantsOf(pageComment.cid) }) };
 });
 scored.sort((a, b) => b.score! - a.score! || a.index - b.index); // then hoist pinned unless publicOptions.pinnedFirst === "false"
 ```
@@ -220,7 +248,8 @@ Treat `community.pageSorts[].name` as data: look it up in your own registry, nev
 | Export | What it is |
 |---|---|
 | `default` / `activePageSort` | The `PageSortFileFactory` pkc-js calls |
-| `SORT_NAME`, `DESCRIPTION`, `optionInputs`, `validatePageSortSettings` | The file's declared surface, for config UIs and tests |
+| `SORT_NAME`, `DESCRIPTION`, `optionInputs`, `validatePageSortSettings` | The file's declared surface, for config UIs and tests. `SORT_NAME` (`active`) is the default wire key, not necessarily the one a board publishes under |
+| `PACKAGE_NAME`, `findPublishedActivePageSorts` | `"@pkcprotocol/active-page-sort"`, and the lookup of this sort in `community.pageSorts.posts` whatever key it is published under. Import-free |
 | `NO_BUMP_KEYWORDS_OPTION`, `BUMP_LIMIT_OPTION` | `"noBumpKeywords"` and `"bumpLimit"`, the option keys. Renaming one is a new contract |
 | `splitKeywords`, `isNoBumpContent`, `parseBumpLimit`, `bumpTimestamp`, `isNoBumpReplyForOptions` | The matching rules, import-free, for browsers |
 | `isCountedReply`, `EXCLUSION_OPTIONS` | Whether a reply can bump at all: the published `exclude*` options checked against its own CommentUpdate, never its ancestors. Import-free |
