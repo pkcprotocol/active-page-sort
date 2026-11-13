@@ -40,7 +40,7 @@ The built-in `active` reads one number off each post's CommentUpdate (`lastReply
 
 - pkc-js `>=0.0.114` on the machine running the community (configurable page sorts, `settings.pages`, the page sort types exported from the root, and tombstone replies passed to `score`, pkc-js#407)
 - pkc-js `>=0.0.143` to publish the sort under a key other than `active` (an entry's `sortName`)
-- Node.js `>=22` on the machine running the community
+- Node.js `>=22.19` on the machine running the community (what pkc-js requires since 0.0.132)
 - ESM-only environment
 
 ## Install and configure on your community
@@ -228,7 +228,11 @@ import activePageSort, { PACKAGE_NAME, findPublishedActivePageSorts } from "@pkc
 
 const [published] = findPublishedActivePageSorts(community.pageSorts?.posts);
 if (!published) throw Error("this board does not publish the sort");
-const page = community.posts.pages[published.sortName]; // or a page fetched from pageCids[published.sortName]
+// The sort's own page: preloaded, or fetched from pageCids[published.sortName]. When it has neither, the board's
+// preloaded page holds the whole comment set (pkc-js's single-chunk shortcut) and is the input to re-sort.
+const cid = community.posts.pageCids[published.sortName];
+const page = community.posts.pages[published.sortName] ?? (cid ? await community.posts.getPage({ cid }) : Object.values(community.posts.pages)[0]);
+if (!page) throw Error("the board has no page to re-sort yet");
 const file = activePageSort({ pageSortSettings: { name: PACKAGE_NAME, options: published.publicOptions } });
 const scored = page.comments.map((pageComment, index) => {
     const { replies, ...commentUpdate } = pageComment.raw.commentUpdate; // score never sees the preloaded reply slice

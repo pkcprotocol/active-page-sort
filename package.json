@@ -41,7 +41,7 @@
   "author": "Rinse",
   "license": "GPL-3.0-or-later",
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=22.19.0"
   },
   "devDependencies": {
     "@commitlint/cli": "20.4.3",
