@@ -1,14 +1,65 @@
 import { describe, expect, it } from "vitest";
-import { BUMP_LIMIT_OPTION, EXCLUSION_OPTIONS, NO_BUMP_KEYWORDS_OPTION, bumpTimestamp, isCountedReply, parseBumpLimit, isNoBumpContent, splitKeywords } from "../../src/no-bump.js";
+import {
+  BUMP_LIMIT_OPTION,
+  EXCLUSION_OPTIONS,
+  NO_BUMP_KEYWORDS_OPTION,
+  PACKAGE_NAME,
+  bumpTimestamp,
+  findPublishedActivePageSorts,
+  isCountedReply,
+  parseBumpLimit,
+  isNoBumpContent,
+  splitKeywords
+} from "../../src/no-bump.js";
 import { buildReply } from "./fixtures.js";
 
 describe("the option key is the wire contract", () => {
-  it("is literally noBumpKeywords, which UIs read off community.pageSorts.posts.active.publicOptions", () => {
+  it("is literally noBumpKeywords, which UIs read off community.pageSorts.posts[key].publicOptions", () => {
     // Renaming this silently breaks every UI that renders a sage marker from the published options.
     expect(NO_BUMP_KEYWORDS_OPTION).toBe("noBumpKeywords");
   });
   it("is literally bumpLimit, which UIs compare to a thread's replyCount", () => {
     expect(BUMP_LIMIT_OPTION).toBe("bumpLimit");
+  });
+  it("is registered as @pkcprotocol/active-page-sort, the name UIs recognise the sort by", () => {
+    expect(PACKAGE_NAME).toBe("@pkcprotocol/active-page-sort");
+  });
+});
+
+describe("findPublishedActivePageSorts: the wire key is the owner's, the sort is found by what is published under it", () => {
+  const sage = { [NO_BUMP_KEYWORDS_OPTION]: "sage", pinnedFirst: "true" };
+
+  it("finds nothing on a board without pageSorts, or without this sort", () => {
+    expect(findPublishedActivePageSorts(undefined)).toEqual([]);
+    expect(findPublishedActivePageSorts({})).toEqual([]);
+    expect(findPublishedActivePageSorts({ hot: { name: "hot", publicOptions: { pinnedFirst: "true" } } })).toEqual([]);
+  });
+  it("finds the sort under the default key", () => {
+    expect(findPublishedActivePageSorts({ active: { name: PACKAGE_NAME, publicOptions: sage } })).toEqual([
+      { sortName: "active", name: PACKAGE_NAME, publicOptions: sage }
+    ]);
+  });
+  it("finds the sort under a key the owner chose, and with no option published", () => {
+    expect(findPublishedActivePageSorts({ bump: { name: PACKAGE_NAME } })).toEqual([{ sortName: "bump", name: PACKAGE_NAME, publicOptions: {} }]);
+  });
+  it("does not take a key named active for this sort: it may be the built-in or another package", () => {
+    expect(findPublishedActivePageSorts({ active: { name: "active", publicOptions: { pinnedFirst: "true" } } })).toEqual([]);
+    expect(findPublishedActivePageSorts({ active: { name: "@someone/other-sort", publicOptions: sage } })).toEqual([]);
+  });
+  it("finds a path-loaded sort, which publishes no name, by a published option", () => {
+    const limit = { [BUMP_LIMIT_OPTION]: "300" };
+    expect(findPublishedActivePageSorts({ active: { publicOptions: sage }, slow: { publicOptions: limit }, custom: { publicOptions: { pinnedFirst: "true" } } })).toEqual([
+      { sortName: "active", name: undefined, publicOptions: sage },
+      { sortName: "slow", name: undefined, publicOptions: limit }
+    ]);
+  });
+  it("returns every entry of a sort listed more than once, in the community's order", () => {
+    const found = findPublishedActivePageSorts({
+      hot: { name: "hot" },
+      activeNoLimit: { name: PACKAGE_NAME, publicOptions: sage },
+      active: { name: PACKAGE_NAME, publicOptions: { ...sage, [BUMP_LIMIT_OPTION]: "300" } }
+    });
+    expect(found.map((published) => published.sortName)).toEqual(["activeNoLimit", "active"]);
   });
 });
 
@@ -96,8 +147,7 @@ describe("isCountedReply: the exclude* options on a reply's own CommentUpdate", 
     ["pending", "excludeCommentPendingApproval", { pendingApproval: true }]
   ] as const;
 
-  it("checks exactly the four exclusions a sort file can apply", () => {
-    // excludeCommentsWithDifferentCommunityAddress needs the community's address; pkc-js applies it before score.
+  it("checks exactly the four reserved exclusions of pkc-js", () => {
     expect(Object.keys(EXCLUSION_OPTIONS).sort()).toEqual(Object.keys(ON).sort());
   });
   it("counts a present reply", () => {

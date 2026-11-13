@@ -10,6 +10,8 @@ Reference source files for this repository, all in the pkc-js repository:
 
 Workflow:
 
+- Never push to `master`. Every change goes on a branch and is opened as a pull request, so it can be reviewed
+  before it merges. A merge to `master` publishes a release (see Releasing), so there is no undo.
 - Before every commit, run `npm run typecheck`, `npm test` and `npm run test:e2e`, and see them pass. CI runs
   the same three.
 - The e2e starts its own kubo daemon on ports 15301 / 18380 / 24301. Never kill daemons by pattern
@@ -20,10 +22,15 @@ Workflow:
 Conventions specific to this package:
 
 - `README.md` is the spec. Behaviour changes belong there first.
-- `sortName` is `active` on purpose: UIs reading `community.posts.pages.active` keep working. Changing it
-  breaks every board using the package.
+- `sortName` is `active` on purpose: UIs reading `community.posts.pages.active` keep working. It is the default
+  wire key; changing it renames the sort on every board whose entry does not set its own `sortName`.
+- The wire key is the owner's (an entry's `sortName`, pkc-js#483, pkc-js `>=0.0.143`). Nothing here may assume the
+  key is `active`: `findPublishedActivePageSorts` (in `src/no-bump.ts`) recognises the sort by the published
+  `name` (`PACKAGE_NAME`), or for a `path` entry by a published `noBumpKeywords` / `bumpLimit`. `score` never
+  reads `pageSortSettings.sortName`, because a client re-sorting a page does not pass it.
+- `PACKAGE_NAME` is the registry name UIs match on. Hosts must register the factory under it.
 - `NO_BUMP_KEYWORDS_OPTION` (`noBumpKeywords`) is the wire contract. UIs read it off
-  `community.pageSorts.posts.active.publicOptions` to render a sage marker, and most of them never install
+  `community.pageSorts.posts[key].publicOptions` to render a sage marker, and most of them never install
   this package. A rename is a new contract, never an edit. The literal is pinned in `test/unit/no-bump.test.ts`.
   `BUMP_LIMIT_OPTION` (`bumpLimit`) is the same kind of contract and is pinned next to it.
 - The match is a whole line equal to the keyword, exact and case-sensitive. `src/no-bump.ts` imports
@@ -37,8 +44,8 @@ Conventions specific to this package:
   a dropped reply does not bump, the replies under it are judged on their own, never cut. pkc-js passes every
   reply to `score` except foreign and CommentUpdate-less ones (pkc-js#407). Flag parsing matches pkc-js
   (trimmed, case-insensitive `true`). With the `posts` defaults it must match the built-in `active`. A new
-  reserved exclusion in pkc-js means a release here. `excludeCommentsWithDifferentCommunityAddress` is left
-  out on purpose: pkc-js applies it, and `score` has no community address (pkc-js#401).
+  reserved exclusion in pkc-js means a release here. Foreign replies are not this package's job: pkc-js drops
+  them with its always-on community identity rule, and `score` has no community address (pkc-js#401).
 - The bump limit counts the replies `isCountedReply` keeps, saged or not, ordered by `(timestamp, cid)` with the
   CID compared as a plain string, so the community and a client re-sort agree on a tie at the boundary.
 - The scorer ignores `commentUpdate.lastReplyTimestamp` on purpose. That aggregate counts saged replies.
@@ -50,7 +57,7 @@ Conventions specific to this package:
 
 Releasing:
 
-- Releases are automatic. A push to `master` runs CI, and on success `release.yml` runs release-it, which
+- Releases are automatic. A pull request merged into `master` runs CI, and on success `release.yml` runs release-it, which
   bumps the version from the conventional-commit types, tags it, cuts a GitHub release, and publishes to
   npm with provenance.
 - Publishing authenticates with npm trusted publishing (OIDC), not a token. `release.yml` needs

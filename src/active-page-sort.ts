@@ -1,7 +1,10 @@
 import type { PageSortFile, PageSortFileFactory, PageSortFileFactoryArgs, PageSortSettingsEntry } from "./types.js";
 import { BUMP_LIMIT_OPTION, NO_BUMP_KEYWORDS_OPTION, bumpTimestamp, isNoBumpContent, parseBumpLimit, splitKeywords } from "./no-bump.js";
 
-/** The wire key: this sort publishes under `community.posts.pages.active` / `pageCids.active`, like the built-in it replaces. */
+/**
+ * The default wire key: this sort publishes under `community.posts.pages.active` / `pageCids.active`, like the built-in
+ * it replaces, unless the owner's `settings.pages` entry sets its own `sortName` (pkc-js#483).
+ */
 export const SORT_NAME = "active";
 
 export const DESCRIPTION =
